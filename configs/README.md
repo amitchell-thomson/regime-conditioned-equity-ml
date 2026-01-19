@@ -1,1 +1,0 @@
-all the knobs that can change experimental outcomes/project setup

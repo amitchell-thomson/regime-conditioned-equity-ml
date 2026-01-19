@@ -41,3 +41,29 @@ The system is composed of four core layers:
 - Risk-aware signal aggregation
 - Transaction cost modeling
 - Regime-aware performance attribution
+
+## Project Structure
+
+```
+regime-conditioned-equity-ml/
+│
+├── configs/
+│   └── README.md
+│
+├── data/
+│   └── raw/
+│   └── features/
+│
+├── src/
+│   └── data/
+│   └── features/
+│   └── regimes/
+│   └── models/
+│   └── utils/
+│
+├── notebooks/
+├── scripts/
+├── tests/
+├── pyproject.toml
+└── README.md
+```
