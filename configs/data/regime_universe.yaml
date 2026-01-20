@@ -1,0 +1,79 @@
+regime_universe:
+  frequency: daily
+  calendar: business
+  output_path: "data/raw/regime_raw.parquet"
+  parquet_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
+
+  lookback:
+    start: "2000-01-02"
+    end: null   # null = up to latest available
+
+  series:
+    # ============================
+    # Risk / Financial Stress
+    # ============================
+    vix:
+      id: VIXCLS
+      name: "CBOE Volatility Index"
+      description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
+      transforms: [level-z_63d]
+
+    nfci:
+      id: NFCI
+      name: "Chicago Fed National Financial Conditions Index"
+      description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
+      transforms: [level-z_252d]
+
+    # ============================
+    # Monetary Policy & Yield Curve
+    # ============================
+    ust2y:
+      id: DGS2
+      name: "2Y Treasury yield"
+      description: "Near-term policy expectations; front-end rates sensitivity."
+      transforms: [level-z_252d, diff-21d-z_252d]
+
+    ust10y:
+      id: DGS10
+      name: "10Y Treasury yield"
+      description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
+      transforms: [level-z_252d, diff-21d-z_252d]
+
+    yc_10_3m:
+      id: T10Y3M
+      name: "10Y-3M yield curve slope"
+      description: "Cycle/recession indicator; robust curve-slope measure."
+      transforms: [level-z_252d]
+
+    # ============================
+    # Inflation: Realised & Expected
+    # ============================
+    pce_core_yoy:
+      id: PCEPILFE
+      name: "Core PCE price index"
+      description: "Fed-relevant underlying inflation gauge (index level; use YoY transform for regime state)."
+      transforms: [yoy-pct-change-z_252d]
+
+    # ============================
+    # Growth / Activity
+    # ============================
+    cfnai:
+      id: CFNAI
+      name: "Chicago Fed National Activity Index"
+      description: "Dimension-reduced growth/activity index designed for business-cycle detection."
+      transforms: [level-z_252d]
+
+    indpro:
+      id: INDPRO
+      name: "Industrial Production Index"
+      description: "High-frequency cyclical activity proxy; use YoY for stability."
+      transforms: [yoy-pct-change-z_252d]
+
+    # ============================
+    # Labour Market (choose one)
+    # ============================
+    jobless_claims:
+      id: ICSA
+      name: "Initial jobless claims"
+      description: "Leading labour stress indicator; use smoothed change to reduce weekly noise."
+      transforms: [ma_4w, pct-change-13w-z_252d]
