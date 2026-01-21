@@ -18,11 +18,33 @@ The system is composed of four core layers:
 
 ## Project Roadmap
 
-### Phase 1 - Data and Features
+### Phase 1 - Data Pipeline
 
-- Equity price and volume data (daily, could extend to intraday in the future)
-- Return, volatility, trend and cross-sectional features
-- Feature normalization and leakage controls
+**Status:** Implemented data processing, working on feature engineering
+
+A production-ready data pipeline that ingests, cleans, and aligns mixed-frequency macro time series data for regime detection.
+
+**Data Sources:**
+- Macro indicators: VIX, Treasury yields, Fed indices (NFCI, CFNAI), inflation (PCE), industrial production, jobless claims
+- Frequency: Daily (VIX, yields), weekly (NFCI, claims), monthly (economic indicators)
+- Period: 2000-01-03 to present (~26 years, 6,500+ business days)
+
+**Pipeline Stages:**
+1. **Load**: Combine raw parquet files from source directory
+2. **Select & Clean**: Filter to configured series, handle weekend releases, deduplicate
+3. **Align**: Align to US business day calendar with staleness tracking
+4. **Validate**: Comprehensive quality checks (types, ranges, gaps, outliers)
+5. **Save**: Export processed data ready for feature engineering
+
+**Key Features:**
+- **Staleness tracking**: Distinguishes new vs forward-filled data points for proper feature engineering
+- **Mixed-frequency handling**: Safely aligns daily, weekly, monthly data without look-ahead bias
+- **Business day calendar**: Excludes weekends and US market holidays
+- **Automated validation**: Detects duplicates, nulls, outliers, temporal inconsistencies
+
+**Output:** `data/processed/macro_processed.parquet` - aligned, validated time series ready for regime detection
+
+**Next Steps:** Feature engineering (transforms, z-scores, moving averages) respecting native frequencies
 
 ### Phase 2 - Regime Detection
 
