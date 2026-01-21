@@ -1,18 +1,14 @@
-"""Data selectors for the regime-conditioned equity ML project."""
+"""Macro data selection utilities."""
 
-from pathlib import Path
-from typing import Dict, Any, Union
-
+from typing import Dict, Any
 import pandas as pd
-
-from regime_ml.utils import load_configs
 
 
 def select_data(
     raw_data: pd.DataFrame,
     cfg: Dict[str, Any]
 ) -> pd.DataFrame:
-    """Select specific series from raw data based on configuration.
+    """Select specific macro series from raw data based on configuration.
     
     This function filters raw data to only include the series specified
     in the configuration file. It uses the series IDs from the config to match

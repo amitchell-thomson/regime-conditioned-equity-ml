@@ -1,9 +1,8 @@
-"""Data validation functions for regime-conditioned equity ML project."""
+"""Macro data validation functions."""
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Optional
-from pathlib import Path
+from typing import Dict, Any, Optional
 
 
 def validate_data(
@@ -12,7 +11,7 @@ def validate_data(
     expected_calendar: Optional[pd.DatetimeIndex] = None
 ) -> Dict[str, Any]:
     """
-    Comprehensive validation of processed dataframe.
+    Comprehensive validation of processed macro dataframe.
     
     Validates:
     - Schema and data types

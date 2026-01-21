@@ -1,16 +1,15 @@
-"""Data pipeline for regime-conditioned equity ML project."""
+"""Macro data pipeline for complete data processing workflow."""
 
 import time
 from pathlib import Path
-
 import pandas as pd
 
 from regime_ml.utils import load_configs
-from regime_ml.data import (
+from regime_ml.data.common import create_master_calendar
+from regime_ml.data.macro import (
     load_raw_data,
     select_data,
     clean_data,
-    create_master_calendar,
     add_staleness_indicators,
     align_to_calendar,
     trim_to_common_start,
@@ -35,9 +34,9 @@ def _print_summary(label: str, df: pd.DataFrame, timing: float | None = None) ->
     print(f"  ✓ {label}: {rows:,} rows, {series} series, {date_range}{timing_str}")
 
 
-def run_data_pipeline() -> pd.DataFrame:
+def run_macro_pipeline() -> pd.DataFrame:
     """
-    Run the complete data pipeline from raw to processed data.
+    Run the complete macro data pipeline from raw to processed data.
     
     Pipeline Stages:
         1. Load: Load raw data from source
@@ -53,7 +52,7 @@ def run_data_pipeline() -> pd.DataFrame:
     
     # Header
     print("\n" + "=" * 100)
-    print("REGIME ML DATA PIPELINE")
+    print("MACRO DATA PIPELINE")
     print("=" * 100)
     
     # Load configuration
@@ -166,4 +165,4 @@ def run_data_pipeline() -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    run_data_pipeline()
+    run_macro_pipeline()
