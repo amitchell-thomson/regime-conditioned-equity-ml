@@ -23,7 +23,7 @@ def select_data(
                  Expected columns: series_code, date, value, series_name, category
         cfg: Configuration dictionary containing:
             - 'series': Dict of series definitions, each with an 'id' field
-            - 'output_path': Path where selected data should be saved (optional)
+            - 'raw_path': Path where selected data should be saved (optional)
     
     Returns:
         pd.DataFrame: Filtered dataframe containing only the specified series,

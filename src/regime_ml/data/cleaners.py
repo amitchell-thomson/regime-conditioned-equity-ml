@@ -1,6 +1,7 @@
 """Helper functions to clean and preprocess data."""
 
 import pandas as pd
+from tqdm import tqdm
 
 def roll_weekend_releases(df: pd.DataFrame):
     """
@@ -112,7 +113,7 @@ def align_to_calendar(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFr
     """
     aligned_series = []
     
-    for series_code in df['series_code'].unique():
+    for series_code in tqdm(df['series_code'].unique(), desc="Aligning series"):
         series_df = df[df['series_code'] == series_code].set_index('date')
         
         # Reindex to master calendar
@@ -140,3 +141,24 @@ def align_to_calendar(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFr
     
     df_final = pd.concat(aligned_series)
     return df_final.reset_index().rename(columns={'index': 'date'})
+
+def trim_to_common_start(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Trim all series to start at the latest start date across all series.
+    Ensures all series have aligned start date.
+    """
+    # Find first valid date for each series
+    first_dates = df[df['value'].notna()].groupby('series_code')['date'].min()
+    
+    # Get the latest of these first dates
+    latest_start_date = first_dates.max()
+    
+    print(f"  Trimming to common start date: {latest_start_date.date()}")
+    
+    # Filter to start from that date
+    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True) # type: ignore
+    
+    rows_removed = len(df) - len(result)
+    print(f"  Removed {int(rows_removed/df["series_code"].nunique())} dates per series")
+    
+    return result

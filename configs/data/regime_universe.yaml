@@ -1,9 +1,12 @@
 regime_universe:
-  frequency: daily
+  frequency: 
   calendar: business
-  output_path: "data/raw/macro_raw.parquet"
-  parquet_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
 
+  data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
+  raw_path: "data/raw/macro_raw.parquet"
+  processed_path: "data/processed/macro_processed.parquet"
+  features_path: "data/features/macro_features.parquet"
+  
   lookback:
     start: "2000-01-02"
     end: "2026-01-15"
