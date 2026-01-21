@@ -1,7 +1,7 @@
 regime_universe:
   frequency: daily
   calendar: business
-  output_path: "data/raw/regime_raw.parquet"
+  output_path: "data/raw/macro_raw.parquet"
   parquet_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
 
   lookback:

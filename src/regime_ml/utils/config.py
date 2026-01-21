@@ -11,8 +11,8 @@ def load_configs() -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Configuration dictionary with keys:
             - 'data': Data configuration from regime_universe.yaml
-            - 'regimes': Regime configuration from regime_definitions.yaml
-            - 'models': Model configuration from model_definitions.yaml
+            - 'regimes': Regime configuration from regime_config.yaml
+            - 'models': Model configuration from model_config.yaml
     
     Example:
         >>> cfg = load_configs()
@@ -23,7 +23,8 @@ def load_configs() -> Dict[str, Any]:
     project_root = Path(__file__).parent.parent.parent.parent
     
     config_paths = {
-        "data": project_root / "configs/data/regime_universe.yaml",
+        "macro_data": project_root / "configs/data/regime_universe.yaml",
+        "equity_data": project_root / "configs/data/equities_universe.yaml",
         "regimes": project_root / "configs/regimes/regime_config.yaml",
         "models": project_root / "configs/models/model_config.yaml",
     }
