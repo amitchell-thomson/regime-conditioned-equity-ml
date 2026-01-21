@@ -1149,7 +1149,7 @@ wheels = [
 [[package]]
 name = "regime-conditioned-equity-ml"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fredapi" },
     { name = "ipykernel" },

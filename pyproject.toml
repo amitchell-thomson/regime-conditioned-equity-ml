@@ -26,3 +26,10 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.14.13",
 ]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

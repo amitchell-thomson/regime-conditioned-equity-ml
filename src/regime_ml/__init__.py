@@ -1,7 +1,8 @@
 """Regime-conditioned machine learning trading system."""
 
-import features
+from . import features, utils
 
 __all__ = [
     "features",
+    "utils",
 ]
