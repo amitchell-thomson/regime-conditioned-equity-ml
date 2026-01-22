@@ -19,13 +19,20 @@ regime_universe:
       id: VIXCLS
       name: "CBOE Volatility Index"
       description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
-      transforms: [level-z_63d]
+      transforms:
+        - [level, {z_score: {window: 63}}]  # Absolute stress level
+        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term momentum
+        - [{ma: {window: 21}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Medium-term trend
+        - [{pct_change: {periods: 1}}, {std: {window: 21}}, {z_score: {window: 126}}]  # Volatility of volatility
 
     nfci:
       id: NFCI
       name: "Chicago Fed National Financial Conditions Index"
       description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
-      transforms: [level-z_252d]
+      transforms:
+        - [level, {z_score: {window: 252}}]  # Current financial conditions
+        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Tightening/loosening rate
+        - [{diff: {periods: 5}}, {diff: {periods: 5}}, {z_score: {window: 126}}]  # Acceleration
 
     # ============================
     # Monetary Policy & Yield Curve
@@ -34,28 +41,43 @@ regime_universe:
       id: DGS2
       name: "2Y Treasury yield"
       description: "Near-term policy expectations; front-end rates sensitivity."
-      transforms: [level-z_252d, diff-21d-z_252d]
+      transforms:
+        - [level, {z_score: {window: 252}}]  # Absolute rate level
+        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term momentum
+        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Medium-term direction
+        - [{ma: {window: 21}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Smoothed trend
 
     ust10y:
       id: DGS10
       name: "10Y Treasury yield"
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
-      transforms: [level-z_252d, diff-21d-z_252d]
+      transforms:
+        - [level, {z_score: {window: 252}}]  # Long-term rate level
+        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term shifts
+        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth/inflation expectations
+        - [{diff: {periods: 1}}, {std: {window: 21}}, {z_score: {window: 126}}]  # Rate uncertainty
 
     yc_10_3m:
       id: T10Y3M
       name: "10Y-3M yield curve slope"
       description: "Cycle/recession indicator; robust curve-slope measure."
-      transforms: [level-z_252d]
+      transforms:
+        - [level, {z_score: {window: 252}}]  # Current curve slope (recession signal)
+        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Steepening/flattening
+        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Rate of adjustment
+        - [{ma: {window: 63}}, {z_score: {window: 252}}]  # Persistent position
 
     # ============================
     # Inflation: Realised & Expected
     # ============================
-    pce_core_yoy:
+    pce_core:
       id: PCEPILFE
       name: "Core PCE price index"
       description: "Fed-relevant underlying inflation gauge (index level; use YoY transform for regime state)."
-      transforms: [yoy-pct-change-z_252d]
+      transforms:
+        - [{yoy: {periods: 252, method: pct_change}}, {z_score: {window: 252}}]  # YoY inflation
+        - [{yoy: {periods: 252, method: pct_change}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Inflation momentum
+        - [{pct_change: {periods: 21}}, {z_score: {window: 126}}]  # Recent price pressure
 
     # ============================
     # Growth / Activity
@@ -64,19 +86,28 @@ regime_universe:
       id: CFNAI
       name: "Chicago Fed National Activity Index"
       description: "Dimension-reduced growth/activity index designed for business-cycle detection."
-      transforms: [level-z_252d]
+      transforms:
+        - [level, {z_score: {window: 252}}]  # Current growth regime
+        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth acceleration
+        - [{ma: {window: 21}}, {z_score: {window: 126}}]  # Recent activity trend
 
     indpro:
       id: INDPRO
       name: "Industrial Production Index"
       description: "High-frequency cyclical activity proxy; use YoY for stability."
-      transforms: [yoy-pct-change-z_252d]
+      transforms:
+        - [{yoy: {periods: 252, method: pct_change}}, {z_score: {window: 252}}]  # YoY production growth
+        - [{yoy: {periods: 252, method: pct_change}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth momentum
+        - [{pct_change: {periods: 63}}, {z_score: {window: 126}}]  # Recent production trend
 
     # ============================
-    # Labour Market (choose one)
+    # Labour Market
     # ============================
     jobless_claims:
       id: ICSA
       name: "Initial jobless claims"
       description: "Leading labour stress indicator; use smoothed change to reduce weekly noise."
-      transforms: [ma_4w, pct-change-13w-z_252d]
+      transforms:
+        - [{ma: {window: 4}}, {z_score: {window: 252}}]  # Smoothed absolute level
+        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 252}}]  # Labour deterioration
+        - [{ma: {window: 4}}, {pct_change: {periods: 4}}, {z_score: {window: 126}}]  # Rapid shifts
