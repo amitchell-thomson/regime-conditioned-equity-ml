@@ -31,10 +31,10 @@ def _print_summary(label: str, df: pd.DataFrame, timing: float | None = None) ->
     date_range = f"{df['date'].min().strftime('%Y-%m-%d')} to {df['date'].max().strftime('%Y-%m-%d')}"
     
     timing_str = f" ({timing:.2f}s)" if timing is not None else ""
-    print(f"  ✓ {label}: {rows:,} rows, {series} series, {date_range}{timing_str}")
+    print(f"  - {label}: {rows:,} rows, {series} series, {date_range}{timing_str}")
 
 
-def run_macro_pipeline() -> pd.DataFrame:
+def run_macro_data_pipeline() -> pd.DataFrame:
     """
     Run the complete macro data pipeline from raw to processed data.
     
@@ -76,10 +76,10 @@ def run_macro_pipeline() -> pd.DataFrame:
     stage_start = time.time()
     
     df_selected = select_data(df_raw, macro_cfg)
-    print(f"  → Selected {df_selected['series_code'].nunique()} series from config")
+    print(f"  - Selected {df_selected['series_code'].nunique()} series from config")
     
     df_clean = clean_data(df_selected)
-    print(f"  → Cleaned data (types, weekends, deduplication)")
+    print(f"  - Cleaned data (types, weekends, deduplication)")
     
     _print_summary("Processed", df_clean, time.time() - stage_start)
     
@@ -94,15 +94,15 @@ def run_macro_pipeline() -> pd.DataFrame:
         macro_cfg["lookback"]["start"],
         macro_cfg["lookback"]["end"]
     )
-    print(f"  → Created calendar: {len(master_calendar):,} business days")
+    print(f"  - Created calendar: {len(master_calendar):,} business days")
     
     # Add staleness tracking
     df_stale = add_staleness_indicators(df_clean, master_calendar)
-    print(f"  → Added staleness indicators")
+    print(f"  - Added staleness indicators")
     
     # Align to calendar with forward-fill
     df_aligned = align_to_calendar(df_stale, master_calendar)
-    print(f"  → Aligned to business days")
+    print(f"  - Aligned to business days")
     
     # Trim to common start date (remove leading nulls)
     df_processed = trim_to_common_start(df_aligned)
@@ -124,11 +124,11 @@ def run_macro_pipeline() -> pd.DataFrame:
     print_validation_report(report)
     
     validation_time = time.time() - stage_start
-    print(f"  ✓ Validation completed in {validation_time:.2f}s")
+    print(f"  - Validation completed in {validation_time:.2f}s")
     
     # Check if validation passed
     if report["status"] != "PASS":
-        print(f"\n⚠️  WARNING: Validation found {len(report['issues'])} critical issues!")
+        print(f"\nWARNING: Validation found {len(report['issues'])} critical issues!")
     
     # =================================================================
     # STAGE 5: SAVE
@@ -144,9 +144,9 @@ def run_macro_pipeline() -> pd.DataFrame:
     file_size = output_path.stat().st_size / (1024 * 1024)  # Convert to MB
     save_time = time.time() - stage_start
     
-    print(f"  ✓ Saved to: {output_path}")
-    print(f"  ✓ File size: {file_size:.2f} MB")
-    print(f"  ✓ Save completed in {save_time:.2f}s")
+    print(f"  - Saved to: {output_path}")
+    print(f"  - File size: {file_size:.2f} MB")
+    print(f"  - Save completed in {save_time:.2f}s")
     
     # =================================================================
     # PIPELINE SUMMARY
@@ -158,11 +158,11 @@ def run_macro_pipeline() -> pd.DataFrame:
     print("=" * 100)
     print(f"Total time: {total_time:.2f}s")
     print(f"Output: {output_path}")
-    print(f"Status: {'✓ PASS' if report['status'] == 'PASS' else '✗ FAIL'}")
+    print(f"Status: {'PASS' if report['status'] == 'PASS' else 'FAIL'}")
     print("=" * 100 + "\n")
     
     return df_processed
 
 
 if __name__ == "__main__":
-    run_macro_pipeline()
+    run_macro_data_pipeline()

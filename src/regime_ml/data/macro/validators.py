@@ -41,7 +41,7 @@ def validate_data(
     # ========================================
     # 1. SCHEMA VALIDATION
     # ========================================
-    print("  → Validating schema...")
+    print("  - Validating schema...")
     required_columns = ['series_code', 'date', 'value', 'series_name', 'category']
     missing_cols = set(required_columns) - set(df.columns)
     
@@ -59,7 +59,7 @@ def validate_data(
     # ========================================
     # 2. DATA TYPE VALIDATION
     # ========================================
-    print("  → Validating data types...")
+    print("  - Validating data types...")
     
     # Check date is datetime
     if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
@@ -74,7 +74,7 @@ def validate_data(
     # ========================================
     # 3. COMPLETENESS CHECKS
     # ========================================
-    print("  → Checking completeness...")
+    print("  - Checking completeness...")
     
     # Count nulls per column
     null_counts = df.isnull().sum()
@@ -107,7 +107,7 @@ def validate_data(
     # ========================================
     # 4. TEMPORAL CONSISTENCY
     # ========================================
-    print("  → Validating temporal consistency...")
+    print("  - Validating temporal consistency...")
     
     # Date range
     if 'date' in df.columns and len(df) > 0:
@@ -145,7 +145,7 @@ def validate_data(
     # ========================================
     # 5. VALUE QUALITY CHECKS
     # ========================================
-    print("  → Validating value quality...")
+    print("  - Validating value quality...")
     
     if 'value' in df.columns:
         # Check for infinities
@@ -168,7 +168,7 @@ def validate_data(
     # ========================================
     # 6. SERIES-SPECIFIC VALIDATION
     # ========================================
-    print("  → Validating individual series...")
+    print("  - Validating individual series...")
     
     for series_code in df['series_code'].unique():
         series_df = df[df['series_code'] == series_code]
@@ -215,7 +215,7 @@ def validate_data(
     # 7. CALENDAR ALIGNMENT (if expected calendar provided)
     # ========================================
     if expected_calendar is not None:
-        print("  → Validating calendar alignment...")
+        print("  - Validating calendar alignment...")
         
         expected_dates = set(expected_calendar)
         actual_dates = set(df['date'].unique())
@@ -235,7 +235,7 @@ def validate_data(
     # 8. STALENESS VALIDATION (if present)
     # ========================================
     if has_staleness:
-        print("  → Validating staleness indicators...")
+        print("  - Validating staleness indicators...")
         
         # Check is_new_data is boolean or null
         if 'is_new_data' in df.columns:
@@ -274,24 +274,23 @@ def print_validation_report(report: Dict[str, Any]) -> None:
     print("-" * 100)
     
     # Status
-    status_symbol = "✓" if report["status"] == "PASS" else "✗"
-    print(f"Status: {status_symbol} {report['status']}")
+    print(f"Status: {report['status']}")
     print(f"Timestamp: {report['timestamp']}")
     
     # Issues
     if report["issues"]:
-        print(f"\n❌ CRITICAL ISSUES ({len(report['issues'])}):")
+        print(f"\nCRITICAL ISSUES ({len(report['issues'])}):")
         for issue in report["issues"]:
             print(f"  • {issue}")
     
     # Warnings
     if report["warnings"]:
-        print(f"\n⚠️  WARNINGS ({len(report['warnings'])}):")
+        print(f"\nWARNINGS ({len(report['warnings'])}):")
         for warning in report["warnings"]:
-            print(f"  • {warning}")
+            print(f"  - {warning}")
     
     # Key Statistics
-    print(f"\n📊 KEY STATISTICS:")
+    print(f"\nKEY STATISTICS:")
     stats = report["statistics"]
     print(f"  Total rows: {stats.get('total_rows', 'N/A'):,}")
     print(f"  Series count: {stats.get('series_count', 'N/A')}")
@@ -308,7 +307,7 @@ def print_validation_report(report: Dict[str, Any]) -> None:
         print(f"  Staleness: {new_pts:,} new points, {ffill_pts:,} forward-filled ({pct_ffill:.1f}%)")
     
     # Series Summary Table
-    print(f"\n📈 SERIES SUMMARY:")
+    print(f"\nSERIES SUMMARY:")
     print(f"  {'Code':<10} {'Obs':>8} {'Date Range':>24} {'Value Range':>24}")
     print(f"  {'-'*10} {'-'*8} {'-'*24} {'-'*24}")
     

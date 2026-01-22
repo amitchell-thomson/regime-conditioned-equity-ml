@@ -122,6 +122,6 @@ def load_raw_data(
     combined_df.to_parquet(output_path, index=False)
     
     if verbose:
-        print(f"  ✓ Successfully saved {len(combined_df):,} rows to {output_path}")
+        print(f"  - Successfully saved {len(combined_df):,} rows to {output_path}")
     
     return combined_df

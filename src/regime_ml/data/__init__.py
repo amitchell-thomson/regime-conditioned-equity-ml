@@ -24,7 +24,7 @@ from .macro import (
     trim_to_common_start,
     validate_data,
     print_validation_report,
-    run_macro_pipeline,
+    run_macro_data_pipeline,
 )
 
 # Equity utilities (to be added later)
@@ -46,5 +46,5 @@ __all__ = [
     'trim_to_common_start',
     'validate_data',
     'print_validation_report',
-    'run_macro_pipeline',
+    'run_macro_data_pipeline',
 ]
