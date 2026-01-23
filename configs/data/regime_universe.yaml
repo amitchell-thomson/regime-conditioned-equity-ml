@@ -5,7 +5,8 @@ regime_universe:
   data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
   raw_path: "data/raw/macro_raw.parquet"
   processed_path: "data/processed/macro_processed.parquet"
-  features_path: "data/features/macro_features.parquet"
+  raw_features_path: "data/features/macro_features_raw.parquet"
+  ready_features_path: "data/features/macro_features_ready.parquet"
   
   lookback:
     start: "2000-01-02"

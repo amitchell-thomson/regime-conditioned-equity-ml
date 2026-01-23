@@ -15,11 +15,39 @@ Key behaviors:
 """
 
 import pandas as pd
+import yaml
 
 from regime_ml.features.common.transform_parser import TransformParser
 from regime_ml.features.macro.validator import validate_macro_features
 from regime_ml.utils.config import load_configs
 from regime_ml.data.common.loaders import load_dataframe
+from regime_ml.features.macro.selection import get_feature_groups, get_top_features
+
+
+def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None:
+    feature_metadata = []
+    for col in features.columns:
+        # Parse feature name
+        parts = col.split('_')
+        indicator = parts[0]
+        transforms = '_'.join(parts[1:])
+        
+        feature_metadata.append({
+            'name': col,
+            'indicator': indicator,
+            'transforms': transforms,
+            'frequency': frequency_map.get(indicator, 'unknown'),
+            'mean': float(features[col].mean()),
+            'std': float(features[col].std()),
+            'missing_pct': float(features[col].isna().sum() / len(features) * 100),
+            'n_outliers_5sigma': int((features[col].abs() > 5).sum())
+        })
+
+    # Save as YAML or JSON
+    with open('data/features/feature_metadata.yaml', 'w') as f:
+        yaml.dump({'features': feature_metadata, 'n_features': len(feature_metadata)}, f)
+
+    print(f"Created metadata for {len(feature_metadata)} features")
 
 
 def run_macro_feature_pipeline() -> pd.DataFrame:
@@ -109,7 +137,6 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
             feature_data[feature_name] = transformed_series
     
     # Validate features before saving
-    print("\n" + "="*80)
     validation_results = validate_macro_features(feature_data, frequency_map)
     
     # Check if validation passed
@@ -118,13 +145,27 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
         print("\n[WARN] Validation found errors but continuing with save.")
         print("       Review validation results above before using these features.")
     
-    # Save features to parquet
-    output_path = regime_cfg["features_path"]
-    feature_data.to_parquet(output_path)
+    # Save raw_features to parquet
+    raw_output_path = regime_cfg["raw_features_path"]
+    feature_data.to_parquet(raw_output_path)
+
+    # Drop burn-in period
+    feature_data_ready = feature_data.dropna()
+
+    # Get top features
+    top_features = get_top_features(n=12)
+
+    # Save selected_features to parquet
+    selected_output_path = regime_cfg["ready_features_path"]
+    feature_data_ready.to_parquet(selected_output_path)
     
-    print(f"\nGenerated {len(feature_data.columns)} features")
-    print(f"Date range: {feature_data.index.min()} to {feature_data.index.max()}")
-    print(f"Saved to: {output_path}")
+    print(f"\nGenerated {len(feature_data_ready.columns)} features")
+    print(f"Date range: {feature_data_ready.index.min()} to {feature_data_ready.index.max()}")
+    print(f"Number of rows: {len(feature_data_ready)}")
+    print(f"Saved to: {raw_output_path}")
+
+    # Create feature metadata
+    create_feature_metadata(feature_data_ready, frequency_map)
     
     return feature_data
 

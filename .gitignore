@@ -20,3 +20,8 @@ Thumbs.db
 
 # Editor
 .vscode/
+
+# Python packaging
+*.egg-info/
+dist/
+build/

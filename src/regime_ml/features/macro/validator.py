@@ -21,6 +21,7 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
+from statsmodels.tsa.stattools import adfuller
 
 
 @dataclass
@@ -104,6 +105,8 @@ class MacroFeatureValidator:
         self._check_daily_indicators()
         self._check_feature_variance()
         self._check_temporal_consistency()
+        self._check_feature_correlations()
+        self._check_stationarity()
         
         # Summarize results
         self._print_summary()
@@ -582,6 +585,136 @@ class MacroFeatureValidator:
                 severity='info'
             ))
             print("[PASS] No major temporal discontinuities")
+    
+    def _check_feature_correlations(self):
+        """Check for high feature correlations."""
+        print("\n10. Feature Correlations")
+        print("-" * 40)
+        
+        # Correlation threshold
+        threshold = 0.70
+        
+        # Calculate correlation matrix
+        corr_matrix = self.df.corr().abs()
+        
+        # Find pairs with correlation > threshold
+        # Use upper triangle to avoid duplicates
+        high_corr_pairs = []
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                corr_value = corr_matrix.iloc[i, j]
+                if corr_value > threshold:
+                    high_corr_pairs.append({
+                        'feature_1': corr_matrix.columns[i],
+                        'feature_2': corr_matrix.columns[j],
+                        'correlation': corr_value
+                    })
+        
+        # Get max correlation (excluding diagonal)
+        upper_triangle = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
+        max_corr = upper_triangle.max().max()
+        
+        print(f"  Total feature pairs: {len(corr_matrix.columns) * (len(corr_matrix.columns) - 1) // 2}")
+        print(f"  Maximum correlation: {max_corr:.3f}")
+        print(f"  Threshold: {threshold}")
+        
+        if len(high_corr_pairs) > 0:
+            # Sort by correlation (descending)
+            high_corr_pairs = sorted(high_corr_pairs, 
+                                    key=lambda x: x['correlation'], 
+                                    reverse=True)
+            
+            self.results.append(ValidationResult(
+                passed=False,
+                message=f"{len(high_corr_pairs)} feature pairs with correlation >{threshold}",
+                severity='warning',
+                details={'high_corr_pairs': high_corr_pairs[:5]}
+            ))
+            print(f"[WARN] Found {len(high_corr_pairs)} feature pairs with correlation >{threshold}:")
+            for pair in high_corr_pairs[:5]:
+                print(f"       {pair['feature_1']} <-> {pair['feature_2']}: {pair['correlation']:.3f}")
+            if len(high_corr_pairs) > 5:
+                print(f"       ... and {len(high_corr_pairs) - 5} more pairs")
+        else:
+            self.results.append(ValidationResult(
+                passed=True,
+                message=f"No feature pairs with correlation >{threshold}",
+                severity='info'
+            ))
+            print(f"[PASS] All feature correlations <{threshold}")
+    
+    def _check_stationarity(self):
+        """Check features for stationarity using Augmented Dickey-Fuller test."""
+        print("\n11. Stationarity (ADF Test)")
+        print("-" * 40)
+        
+        # Significance level
+        alpha = 0.05
+        
+        # Test each feature
+        non_stationary = []
+        stationary_count = 0
+        
+        for col in self.df.columns:
+            try:
+                # Drop NaN values for ADF test
+                series = self.df[col].dropna()
+                
+                if len(series) < 50:  # Need sufficient data for ADF test
+                    continue
+                
+                # Run ADF test
+                adf_result = adfuller(series, autolag='AIC')
+                p_value = adf_result[1]
+                
+                if p_value >= alpha:
+                    # Non-stationary (cannot reject null hypothesis)
+                    non_stationary.append({
+                        'feature': col,
+                        'p_value': p_value,
+                        'adf_stat': adf_result[0]
+                    })
+                else:
+                    stationary_count += 1
+                    
+            except Exception as e:
+                # Skip features that cause errors in ADF test
+                print(f"       [WARN] Could not test {col}: {str(e)[:50]}")
+                continue
+        
+        total_tested = stationary_count + len(non_stationary)
+        
+        print(f"  Features tested: {total_tested}")
+        print(f"  Stationary (p < {alpha}): {stationary_count}")
+        print(f"  Non-stationary (p >= {alpha}): {len(non_stationary)}")
+        
+        if len(non_stationary) > 0:
+            # Sort by p-value (most non-stationary first)
+            non_stationary = sorted(non_stationary, 
+                                   key=lambda x: x['p_value'], 
+                                   reverse=True)
+            
+            self.results.append(ValidationResult(
+                passed=False,
+                message=f"{len(non_stationary)} features are non-stationary (p >= {alpha})",
+                severity='warning',
+                details={'non_stationary': non_stationary[:5]}
+            ))
+            print(f"[WARN] {len(non_stationary)} non-stationary features (may have trends/unit roots):")
+            for item in non_stationary[:5]:
+                print(f"       {item['feature']}: p={item['p_value']:.4f}, ADF={item['adf_stat']:.3f}")
+            if len(non_stationary) > 5:
+                print(f"       ... and {len(non_stationary) - 5} more")
+            print(f"       Note: Non-stationary features may need differencing or detrending")
+        else:
+            self.results.append(ValidationResult(
+                passed=True,
+                message=f"All features are stationary (p < {alpha})",
+                severity='info'
+            ))
+            print(f"[PASS] All {total_tested} features are stationary")
     
     def _print_summary(self):
         """Print validation summary."""
