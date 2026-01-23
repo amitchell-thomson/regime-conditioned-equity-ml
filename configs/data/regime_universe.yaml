@@ -17,6 +17,7 @@ regime_universe:
     # ============================
     vix:
       id: VIXCLS
+      frequency: daily
       name: "CBOE Volatility Index"
       description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
       transforms:
@@ -27,18 +28,20 @@ regime_universe:
 
     nfci:
       id: NFCI
+      frequency: weekly
       name: "Chicago Fed National Financial Conditions Index"
       description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
       transforms:
-        - [level, {z_score: {window: 252}}]  # Current financial conditions
-        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Tightening/loosening rate
-        - [{diff: {periods: 5}}, {diff: {periods: 5}}, {z_score: {window: 126}}]  # Acceleration
+        - [level, {z_score: {window: 50}}]  # Current financial conditions
+        - [{diff: {periods: 21}}, {z_score: {window: 50}}]  # Tightening/loosening rate
+        - [{diff: {periods: 5}}, {diff: {periods: 5}}, {z_score: {window: 25}}]  # Acceleration
 
     # ============================
     # Monetary Policy & Yield Curve
     # ============================
     ust2y:
       id: DGS2
+      frequency: daily
       name: "2Y Treasury yield"
       description: "Near-term policy expectations; front-end rates sensitivity."
       transforms:
@@ -49,6 +52,7 @@ regime_universe:
 
     ust10y:
       id: DGS10
+      frequency: daily
       name: "10Y Treasury yield"
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
       transforms:
@@ -59,6 +63,7 @@ regime_universe:
 
     yc_10_3m:
       id: T10Y3M
+      frequency: daily
       name: "10Y-3M yield curve slope"
       description: "Cycle/recession indicator; robust curve-slope measure."
       transforms:
@@ -72,42 +77,43 @@ regime_universe:
     # ============================
     pce_core:
       id: PCEPILFE
+      frequency: monthly
       name: "Core PCE price index"
-      description: "Fed-relevant underlying inflation gauge (index level; use YoY transform for regime state)."
       transforms:
-        - [{yoy: {periods: 252, method: pct_change}}, {z_score: {window: 252}}]  # YoY inflation
-        - [{yoy: {periods: 252, method: pct_change}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Inflation momentum
-        - [{pct_change: {periods: 21}}, {z_score: {window: 126}}]  # Recent price pressure
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]  # 12 months YoY, 5yr window
+        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]
+        - [{pct_change: {periods: 1}}, {z_score: {window: 36}}]  # 1-month change, 3yr window
 
     # ============================
     # Growth / Activity
     # ============================
     cfnai:
       id: CFNAI
+      frequency: monthly
       name: "Chicago Fed National Activity Index"
-      description: "Dimension-reduced growth/activity index designed for business-cycle detection."
       transforms:
-        - [level, {z_score: {window: 252}}]  # Current growth regime
-        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth acceleration
-        - [{ma: {window: 21}}, {z_score: {window: 126}}]  # Recent activity trend
+        - [level, {z_score: {window: 36}}]  # 3yr window (36 months)
+        - [{diff: {periods: 1}}, {z_score: {window: 36}}]  # 1-month diff
+        - [{ma: {window: 3}}, {z_score: {window: 36}}]  # 3-month MA, 3yr window
 
     indpro:
       id: INDPRO
+      frequency: monthly
       name: "Industrial Production Index"
-      description: "High-frequency cyclical activity proxy; use YoY for stability."
       transforms:
-        - [{yoy: {periods: 252, method: pct_change}}, {z_score: {window: 252}}]  # YoY production growth
-        - [{yoy: {periods: 252, method: pct_change}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth momentum
-        - [{pct_change: {periods: 63}}, {z_score: {window: 126}}]  # Recent production trend
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]  # 12 months YoY
+        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]
+        - [{pct_change: {periods: 3}}, {z_score: {window: 36}}]  # 3-month change
 
     # ============================
     # Labour Market
     # ============================
     jobless_claims:
       id: ICSA
+      frequency: weekly
       name: "Initial jobless claims"
       description: "Leading labour stress indicator; use smoothed change to reduce weekly noise."
       transforms:
-        - [{ma: {window: 4}}, {z_score: {window: 252}}]  # Smoothed absolute level
-        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 252}}]  # Labour deterioration
-        - [{ma: {window: 4}}, {pct_change: {periods: 4}}, {z_score: {window: 126}}]  # Rapid shifts
+        - [{ma: {window: 4}}, {z_score: {window: 50}}]  # Smoothed absolute level
+        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 50}}]  # Labour deterioration
+        - [{ma: {window: 4}}, {pct_change: {periods: 4}}, {z_score: {window: 25}}]  # Rapid shifts

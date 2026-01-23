@@ -1,0 +1,112 @@
+Metadata-Version: 2.4
+Name: regime-conditioned-equity-ml
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: fredapi>=0.5.2
+Requires-Dist: ipykernel>=7.1.0
+Requires-Dist: massive>=2.0.3
+Requires-Dist: matplotlib>=3.10.8
+Requires-Dist: nbformat>=5.10.4
+Requires-Dist: numpy>=2.4.1
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: plotly>=6.5.2
+Requires-Dist: pyarrow>=23.0.0
+Requires-Dist: python-dotenv>=1.2.1
+Requires-Dist: pyyaml>=6.0.3
+Requires-Dist: scikit-learn>=1.8.0
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: yfinance>=1.0
+
+# Regime-Conditioned Machine Learning Trading System
+
+A research-grade equity trading engine than detects market regimes and conditions predictive machine learning models on regime-specific dynamics to handle financial non-stationarity
+
+## Motivation
+
+Financial markets are non-stationary,: relationships between features and returns change across volatility, liquidity, and macro regimes. Global predictive models often fail when regime structure is ignored
+
+This project explores a regime-aware approach to equity prediction, combining unsupervised regime detection with conditional machine learning models to improve robustness and risk-adjusted performance
+
+## System Overview
+
+The system is composed of four core layers:
+1. Data ingestion and feature engineering
+2. Market regime detection
+3. Regime-conditioned predictive modelling
+4. Portfolio construction and evaluation
+
+## Project Roadmap
+
+### Phase 1 - Data Pipeline
+
+**Status:** Implemented data processing, working on feature engineering
+
+A production-ready data pipeline that ingests, cleans, and aligns mixed-frequency macro time series data for regime detection.
+
+**Data Sources:**
+- Macro indicators: VIX, Treasury yields, Fed indices (NFCI, CFNAI), inflation (PCE), industrial production, jobless claims
+- Frequency: Daily (VIX, yields), weekly (NFCI, claims), monthly (economic indicators)
+- Period: 2000-01-03 to present (~26 years, 6,500+ business days)
+
+**Pipeline Stages:**
+1. **Load**: Combine raw parquet files from source directory
+2. **Select & Clean**: Filter to configured series, handle weekend releases, deduplicate
+3. **Align**: Align to US business day calendar with staleness tracking
+4. **Validate**: Comprehensive quality checks (types, ranges, gaps, outliers)
+5. **Save**: Export processed data ready for feature engineering
+
+**Key Features:**
+- **Staleness tracking**: Distinguishes new vs forward-filled data points for proper feature engineering
+- **Mixed-frequency handling**: Safely aligns daily, weekly, monthly data without look-ahead bias
+- **Business day calendar**: Excludes weekends and US market holidays
+- **Automated validation**: Detects duplicates, nulls, outliers, temporal inconsistencies
+
+**Output:** `data/processed/macro_processed.parquet` - aligned, validated time series ready for regime detection
+
+**Next Steps:** Feature engineering (transforms, z-scores, moving averages) respecting native frequencies
+
+### Phase 2 - Regime Detection
+
+- Unsupervised regime inference (eg. HMMs, clustering)
+- Volatility and correlation-based regime definitions
+- Regime stability and transition dynamics
+
+### Phase 3 - Regime-Conditioned Models
+
+- Separate predictive models per regime
+- Tree-based baselines, followed by neural models
+- Probabilistic outputs and uncertainty estimates
+
+### Phase 4 - Portfolio and Evaluation
+
+- Risk-aware signal aggregation
+- Transaction cost modeling
+- Regime-aware performance attribution
+
+## Project Structure
+
+```
+regime-conditioned-equity-ml/
+│
+├── configs/
+│   └── README.md
+│
+├── data/
+│   └── raw/
+│   └── features/
+│
+├── src/
+│   └── data/
+│   └── features/
+│   └── regimes/
+│   └── models/
+│   └── utils/
+│
+├── notebooks/
+├── scripts/
+├── tests/
+├── pyproject.toml
+└── README.md
+```

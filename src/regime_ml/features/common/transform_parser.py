@@ -33,21 +33,13 @@ class TransformParser:
             
         Returns:
             Dict mapping ticker names to lists of ChainedTransform objects
-            
-        Example:
-            {
-                'vix': [
-                    ChainedTransform([Level(), ZScore(window=63)]),
-                    ChainedTransform([Diff(periods=5), ZScore(window=126)])
-                ],
-                'ust10y': [...]
-            }
         """
         result = {}
         
         series = yaml_config.get('series', {})
         
         for ticker_name, ticker_config in series.items():
+            ticker_id = ticker_config.get('id', ticker_name)
             transform_specs = ticker_config.get('transforms', [])
             
             # Parse each transform chain specification
@@ -56,7 +48,7 @@ class TransformParser:
                 for chain_spec in transform_specs
             ]
             
-            result[ticker_name] = transform_chains
+            result[ticker_id] = transform_chains
         
         return result
     
