@@ -153,20 +153,21 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     feature_data_ready = feature_data.dropna()
 
     # Get top features
-    top_features = get_top_features(n=12)
+    top_features = get_top_features(n=5)
+    feature_data_ready = feature_data_ready[top_features]
 
     # Save selected_features to parquet
     selected_output_path = regime_cfg["ready_features_path"]
     feature_data_ready.to_parquet(selected_output_path)
     
-    print(f"\nGenerated {len(feature_data_ready.columns)} features")
+    print(f"\nSelected {len(feature_data_ready.columns)} features")
     print(f"Date range: {feature_data_ready.index.min()} to {feature_data_ready.index.max()}")
     print(f"Number of rows: {len(feature_data_ready)}")
     print(f"Saved to: {raw_output_path}")
 
     # Create feature metadata
-    create_feature_metadata(feature_data_ready, frequency_map)
-    
+    create_feature_metadata(feature_data_ready, frequency_map) # type: ignore
+
     return feature_data
 
 
