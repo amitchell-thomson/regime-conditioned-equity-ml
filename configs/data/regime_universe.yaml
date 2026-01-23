@@ -45,10 +45,7 @@ regime_universe:
       name: "2Y Treasury yield"
       description: "Near-term policy expectations; front-end rates sensitivity."
       transforms:
-        - [level, {z_score: {window: 252}}]  # Absolute rate level
-        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term momentum
-        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Medium-term direction
-        - [{ma: {window: 21}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Smoothed trend
+        - [level, {z_score: {window: 252}}]
 
     ust10y:
       id: DGS10
@@ -57,7 +54,6 @@ regime_universe:
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
       transforms:
         - [level, {z_score: {window: 252}}]  # Long-term rate level
-        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term shifts
         - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth/inflation expectations
         - [{diff: {periods: 1}}, {std: {window: 21}}, {z_score: {window: 126}}]  # Rate uncertainty
 
@@ -70,7 +66,6 @@ regime_universe:
         - [level, {z_score: {window: 252}}]  # Current curve slope (recession signal)
         - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Steepening/flattening
         - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Rate of adjustment
-        - [{ma: {window: 63}}, {z_score: {window: 252}}]  # Persistent position
 
     # ============================
     # Inflation: Realised & Expected
@@ -94,7 +89,6 @@ regime_universe:
       transforms:
         - [level, {z_score: {window: 36}}]  # 3yr window (36 months)
         - [{diff: {periods: 1}}, {z_score: {window: 36}}]  # 1-month diff
-        - [{ma: {window: 3}}, {z_score: {window: 36}}]  # 3-month MA, 3yr window
 
     indpro:
       id: INDPRO
