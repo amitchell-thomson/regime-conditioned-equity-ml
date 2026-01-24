@@ -98,10 +98,21 @@ vix:
 - **Model-Ready**: `data/features/macro_features_ready.parquet` (2005-2026, 25 features, no nulls)
 - **Metadata**: `data/features/feature_metadata.yaml` (stats, frequency, outliers per feature)
 
+**Feature Selection:**
+
+For regime detection, the pipeline selects the **top n (currently 5) most important features** from the validated set based on regime discriminative power:
+1. **T10Y3M_level** - Yield curve slope (recession signal)
+2. **VIXCLS_level** - Equity volatility (risk-on/risk-off)
+3. **NFCI_level** - Financial conditions (credit stress)
+4. **PCEPILFE_yoy_12** - Inflation (policy regime)
+5. **CFNAI_level** - Economic activity (expansion/contraction)
+
+This core set balances **interpretability** (can name regimes), **statistical efficiency** (avoids curse of dimensionality in HMMs), and **coverage** (captures all regime dimensions: growth, inflation, volatility, credit, rates).
+
 **Final Dataset:**
-- **Features**: 25 low-correlation, stationary features
-- **Categories**: Stress (7), Rates (8), Inflation (3), Growth (4), Labor (3)
+- **Features**: 5 core regime indicators (selected from 25 validated features)
 - **Period**: 2005-01-03 to 2026-01-15 (~5,250 business days)
+- **Quality**: Low-correlation (<0.70), stationary (ADF p<0.05), validated
 - **Ready for**: HMM-based regime detection and regime-conditioned modeling
 
 ### Phase 2 - Regime Detection
