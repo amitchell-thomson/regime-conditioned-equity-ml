@@ -163,7 +163,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     print(f"\nSelected {len(feature_data_ready.columns)} features")
     print(f"Date range: {feature_data_ready.index.min()} to {feature_data_ready.index.max()}")
     print(f"Number of rows: {len(feature_data_ready)}")
-    print(f"Saved to: {raw_output_path}")
+    print(f"Saved to: {raw_output_path} and {selected_output_path}")
 
     # Create feature metadata
     create_feature_metadata(feature_data_ready, frequency_map) # type: ignore

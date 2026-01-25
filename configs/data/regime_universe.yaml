@@ -10,7 +10,7 @@ regime_universe:
   
   lookback:
     start: "2000-01-02"
-    end: "2026-01-15"
+    end: "2026-01-23"
 
   series:
     # ============================
