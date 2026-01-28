@@ -51,23 +51,26 @@ def compare_models(
     Compare multiple regime detection models.
     
     Args:
-        features: Input features
+        features: Input features DataFrame (will be converted to numpy array)
         models: Dict of {name: model_instance}
         
     Returns:
         Comparison dataframe with BIC, AIC, log-likelihood
     """
+    # Convert DataFrame to numpy array
+    X = features.values
+    
     results = []
     
     for name, model in models.items():
-        model.fit(features)
-        regimes = model.predict(features)
+        model.fit(X)
+        regimes = model.predict(X)
         
         # Get model metrics
         if hasattr(model, 'score'):
-            ll = model.score(features)
+            ll = model.score(X)
             n_params = estimate_n_params(model)
-            n_samples = len(features)
+            n_samples = len(X)
             
             bic = -2 * ll + n_params * np.log(n_samples)
             aic = -2 * ll + 2 * n_params

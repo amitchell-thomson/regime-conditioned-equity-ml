@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any
 from pathlib import Path
@@ -29,12 +28,12 @@ class BaseRegimeDetector(ABC):
         self.params = kwargs
         
     @abstractmethod
-    def fit(self, X: pd.DataFrame, **kwargs) -> 'BaseRegimeDetector':
+    def fit(self, X: np.ndarray, **kwargs) -> 'BaseRegimeDetector':
         """
         Fit regime model to data.
         
         Args:
-            X: Features (n_samples, n_features)
+            X: Features array (n_samples, n_features)
             
         Returns:
             self (fitted model)
@@ -42,12 +41,12 @@ class BaseRegimeDetector(ABC):
         ...
     
     @abstractmethod
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict regime labels for data.
         
         Args:
-            X: Features (n_samples, n_features)
+            X: Features array (n_samples, n_features)
             
         Returns:
             Regime labels (n_samples,)
@@ -55,19 +54,19 @@ class BaseRegimeDetector(ABC):
         ...
     
     @abstractmethod
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
         Predict regime probabilities.
         
         Args:
-            X: Features (n_samples, n_features)
+            X: Features array (n_samples, n_features)
             
         Returns:
             Regime probabilities (n_samples, n_regimes)
         """
         ...
     
-    def fit_predict(self, X: pd.DataFrame) -> np.ndarray:
+    def fit_predict(self, X: np.ndarray) -> np.ndarray:
         """Convenience method: fit and predict in one call."""
         self.fit(X)
         return self.predict(X)

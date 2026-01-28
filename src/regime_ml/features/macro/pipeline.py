@@ -153,7 +153,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     feature_data_ready = feature_data.dropna()
 
     # Get top features
-    top_features = get_top_features(n=5)
+    top_features = get_top_features(n=8)
     feature_data_ready = feature_data_ready[top_features]
 
     # Save selected_features to parquet

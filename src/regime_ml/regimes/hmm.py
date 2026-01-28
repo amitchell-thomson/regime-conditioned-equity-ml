@@ -3,9 +3,133 @@ import pandas as pd
 from pathlib import Path
 import pickle
 from hmmlearn import hmm
-from typing import Optional
+from typing import Optional, Tuple
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 from .base import BaseRegimeDetector
+
+
+def initialise_emissions(
+    df_train: pd.DataFrame,
+    n_clusters: int,
+    random_state: int = 42,
+    covariance_type: str = 'full',
+    scale_features: bool = True
+) -> Tuple[np.ndarray, np.ndarray, StandardScaler]:
+    """
+    Initialize HMM emission parameters using KMeans clustering.
+    
+    Computes cluster means and covariances from k-means clustering on training data.
+    These can be used to initialize HMM emission distributions.
+    
+    Args:
+        df_train: Training features DataFrame (n_samples, n_features)
+        n_clusters: Number of clusters (should match n_regimes)
+        random_state: Random seed for k-means initialization
+        covariance_type: 'full' or 'diag' - format of returned covariance matrices
+        scale_features: Whether to standardize features before clustering (recommended)
+    
+    Returns:
+        Tuple of (means, covariances, scaler):
+        - means: Cluster means array (n_clusters, n_features)
+        - covariances: Covariance matrices array, shape depends on covariance_type
+        - scaler: Fitted StandardScaler for transforming new data
+    """
+    # Convert to numpy array
+    X_train = df_train.values
+    n_features = X_train.shape[1]
+    
+    # Scale features (important for k-means distance-based clustering)
+    scaler = StandardScaler()
+    if scale_features:
+        X_train_scaled = scaler.fit_transform(X_train)
+    else:
+        X_train_scaled = X_train.copy()
+        # Still fit scaler for consistency (identity transform)
+        scaler.fit(X_train)
+    
+    # Fit k-means
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
+    cluster_labels = kmeans.fit_predict(X_train_scaled)
+    
+    # Get cluster means (from k-means centers)
+    means = kmeans.cluster_centers_  # Shape: (n_clusters, n_features)
+    
+    # Compute cluster covariances
+    covariances = []
+    
+    for cluster_id in range(n_clusters):
+        # Get points assigned to this cluster
+        cluster_mask = cluster_labels == cluster_id
+        cluster_points = X_train_scaled[cluster_mask]
+        
+        if len(cluster_points) < 2:
+            # Not enough points for covariance - use identity matrix
+            cov = np.eye(n_features) * 1e-6
+        else:
+            # Compute sample covariance matrix (unbiased, divide by n-1)
+            cov = np.cov(cluster_points.T, ddof=1)
+            
+            # Ensure positive semi-definite (numerical stability)
+            cov = (cov + cov.T) / 2  # Ensure symmetry
+            eigvals, eigvecs = np.linalg.eigh(cov)
+            eigvals = np.maximum(eigvals, 1e-6)  # Ensure positive eigenvalues
+            cov = eigvecs @ np.diag(eigvals) @ eigvecs.T
+        
+        # Handle NaN/Inf values
+        cov = np.nan_to_num(cov, nan=0.0, posinf=1e6, neginf=-1e6)
+        covariances.append(cov)
+    
+    # Format covariances based on requested type
+    if covariance_type == 'full':
+        # Stack into (n_clusters, n_features, n_features) array
+        covs_array = np.stack(covariances, axis=0)
+        return means, covs_array, scaler
+    elif covariance_type == 'diag':
+        # Extract diagonal elements: (n_clusters, n_features)
+        covs_array = np.array([np.diag(cov) for cov in covariances])
+        return means, covs_array, scaler
+    else:
+        raise ValueError(f"Unsupported covariance type: {covariance_type}. Use 'full' or 'diag'.")
+
+def initialise_transitions(n_regimes: int, p_stay: float) -> np.ndarray:
+    """
+    Initialize HMM transition matrix with uniform off-diagonal probabilities.
+    
+    Creates a transition matrix where diagonal elements (staying in same regime)
+    have probability p_stay, and off-diagonal elements (switching regimes) are
+    uniformly distributed with probability (1 - p_stay) / (n_regimes - 1).
+    
+    Args:
+        n_regimes: Number of regimes/states
+        p_stay: Probability of staying in the same regime (diagonal elements)
+    
+    Returns:
+        Transition matrix (n_regimes, n_regimes) with rows summing to 1
+    """
+    if not 0 <= p_stay <= 1:
+        raise ValueError(f"p_stay must be between 0 and 1, got {p_stay}")
+    
+    transmat = (
+        np.eye(n_regimes) * p_stay + 
+        (np.ones((n_regimes, n_regimes)) - np.eye(n_regimes)) * (1 - p_stay) / (n_regimes - 1)
+    )
+    return transmat
+    
+def initialise_probabilities(n_regimes: int) -> np.ndarray:
+    """
+    Initialize uniform initial state probabilities.
+    
+    All regimes have equal probability of being the initial state.
+    
+    Args:
+        n_regimes: Number of regimes/states
+    
+    Returns:
+        Initial state probability vector (n_regimes,) summing to 1
+    """
+    return np.ones(n_regimes) / n_regimes
 
 class HMMRegimeDetector(BaseRegimeDetector):
     """
@@ -21,6 +145,11 @@ class HMMRegimeDetector(BaseRegimeDetector):
         covariance_type: str = 'full',
         n_iter: int = 1000,
         random_state: int = 42,
+        startprob: Optional[np.ndarray] = None,
+        transmat: Optional[np.ndarray] = None,
+        means: Optional[np.ndarray] = None,
+        covars: Optional[np.ndarray] = None,
+        init_params: str = '',
         **kwargs
     ):
         """
@@ -31,11 +160,22 @@ class HMMRegimeDetector(BaseRegimeDetector):
             covariance_type: 'full', 'diag', 'spherical', 'tied'
             n_iter: Maximum EM iterations
             random_state: Random seed for reproducibility
+            startprob: Optional initial state probabilities (n_regimes,)
+            transmat: Optional transition matrix (n_regimes, n_regimes)
+            means: Optional emission means (n_regimes, n_features)
+            covars: Optional emission covariances (format depends on covariance_type)
+            init_params: Parameters to initialize (empty string means use provided values)
+            **kwargs: Additional arguments passed to GaussianHMM
         """
         super().__init__(n_regimes=n_regimes)
         self.covariance_type = covariance_type
         self.n_iter = n_iter
         self.random_state = random_state
+
+        self.startprob = startprob
+        self.transmat = transmat
+        self.means = means
+        self.covars = covars
         
         # Initialize HMM model
         self.model = hmm.GaussianHMM(
@@ -43,69 +183,163 @@ class HMMRegimeDetector(BaseRegimeDetector):
             covariance_type=covariance_type,
             n_iter=n_iter,
             random_state=random_state,
+            init_params=init_params,
             **kwargs
         )
         
-    def fit(self, X: pd.DataFrame, **kwargs) -> 'HMMRegimeDetector':
+    def fit(self, X: np.ndarray, **kwargs) -> 'HMMRegimeDetector':
         """
         Fit HMM to features.
         
         Args:
-            X: Features (n_samples, n_features)
+            X: Features array (n_samples, n_features)
+            **kwargs: Additional arguments passed to GaussianHMM.fit()
             
         Returns:
-            self (fitted)
+            self (fitted model)
         """
-        # Store feature names
-        self.feature_names = list(X.columns)
+        # Validate input
+        if not isinstance(X, np.ndarray):
+            raise TypeError(f"X must be numpy array, got {type(X)}")
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
         
+        # Set initialization parameters if provided
+        if self.startprob is not None:
+            self.model.startprob_ = self.startprob
+        if self.transmat is not None:
+            self.model.transmat_ = self.transmat
+        if self.means is not None:
+            self.model.means_ = self.means
+        if self.covars is not None:
+            self.model.covars_ = self.covars
+
         # Fit HMM
-        X_array = X.values
-        self.model.fit(X_array, **kwargs)
+        self.model.fit(X, **kwargs)
         
         self.is_fitted = True
         return self
     
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict regime labels using Viterbi algorithm."""
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Predict regime labels using Viterbi algorithm.
+        
+        Args:
+            X: Features array (n_samples, n_features)
+            
+        Returns:
+            Regime labels array (n_samples,)
+        """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         
-        X_array = X[self.feature_names].values
-        return self.model.predict(X_array)
+        if not isinstance(X, np.ndarray):
+            raise TypeError(f"X must be numpy array, got {type(X)}")
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+        
+        return self.model.predict(X)
     
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Get regime probabilities using forward algorithm."""
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """
+        Get regime probabilities using forward algorithm.
+        
+        Args:
+            X: Features array (n_samples, n_features)
+            
+        Returns:
+            Regime probabilities array (n_samples, n_regimes)
+        """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         
-        X_array = X[self.feature_names].values
-        return self.model.predict_proba(X_array)
+        if not isinstance(X, np.ndarray):
+            raise TypeError(f"X must be numpy array, got {type(X)}")
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+        
+        return self.model.predict_proba(X)
     
-    def score(self, X: pd.DataFrame) -> float:
-        """Compute log-likelihood of data."""
-        X_array = X[self.feature_names].values
-        return self.model.score(X_array)
+    def score(self, X: np.ndarray) -> float:
+        """
+        Compute log-likelihood of data under the fitted model.
+        
+        Args:
+            X: Features array (n_samples, n_features)
+            
+        Returns:
+            Log-likelihood score
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        
+        if not isinstance(X, np.ndarray):
+            raise TypeError(f"X must be numpy array, got {type(X)}")
+        if X.ndim != 2:
+            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+        
+        return self.model.score(X)
     
     def get_transition_matrix(self) -> np.ndarray:
-        """Get regime transition probabilities."""
+        """
+        Get regime transition probability matrix.
+        
+        Returns:
+            Transition matrix (n_regimes, n_regimes) where entry (i,j) is
+            probability of transitioning from regime i to regime j
+        """
         if not self.is_fitted:
             raise ValueError("Model not fitted.")
         return self.model.transmat_
     
     def get_regime_means(self) -> np.ndarray:
-        """Get mean feature values for each regime."""
+        """
+        Get mean feature values for each regime.
+        
+        Returns:
+            Means array (n_regimes, n_features)
+        """
         if not self.is_fitted:
             raise ValueError("Model not fitted.")
         return self.model.means_
     
+    def get_regime_covariances(self) -> np.ndarray:
+        """
+        Get covariance matrices for each regime.
+        
+        Returns:
+            Covariance array, shape depends on covariance_type:
+            - 'full': (n_regimes, n_features, n_features)
+            - 'diag': (n_regimes, n_features)
+            - 'spherical': (n_regimes,)
+            - 'tied': (n_features, n_features)
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted.")
+        return self.model.covars_ # type: ignore
+    
     def save(self, path: Path) -> None:
-        """Save model to pickle file."""
+        """
+        Save fitted model to pickle file.
+        
+        Args:
+            path: File path to save model
+        """
+        if not self.is_fitted:
+            raise ValueError("Cannot save unfitted model. Call fit() first.")
         with open(path, 'wb') as f:
             pickle.dump(self, f)
     
     @classmethod
     def load(cls, path: Path) -> 'HMMRegimeDetector':
-        """Load model from pickle file."""
+        """
+        Load fitted model from pickle file.
+        
+        Args:
+            path: File path to load model from
+            
+        Returns:
+            Loaded HMMRegimeDetector instance
+        """
         with open(path, 'rb') as f:
             return pickle.load(f)
