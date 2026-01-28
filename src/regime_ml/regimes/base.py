@@ -52,20 +52,7 @@ class BaseRegimeDetector(ABC):
             Regime labels (n_samples,)
         """
         ...
-    
-    @abstractmethod
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """
-        Predict regime probabilities.
-        
-        Args:
-            X: Features array (n_samples, n_features)
-            
-        Returns:
-            Regime probabilities (n_samples, n_regimes)
-        """
-        ...
-    
+
     def fit_predict(self, X: np.ndarray) -> np.ndarray:
         """Convenience method: fit and predict in one call."""
         self.fit(X)
@@ -85,9 +72,7 @@ class BaseRegimeDetector(ABC):
     def get_params(self) -> Dict[str, Any]:
         """Get model parameters."""
         return {
-            'n_regimes': self.n_regimes,
             'is_fitted': self.is_fitted,
-            'feature_names': self.feature_names,
             **self.params
         }
     

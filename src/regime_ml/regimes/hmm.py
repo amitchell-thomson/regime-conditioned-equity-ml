@@ -88,7 +88,7 @@ def initialise_emissions(
         return means, covs_array, scaler
     elif covariance_type == 'diag':
         # Extract diagonal elements: (n_clusters, n_features)
-        covs_array = np.array([np.diag(cov) for cov in covariances])
+        covs_array = np.stack([np.diagonal(cov) for cov in covariances], axis=0)
         return means, covs_array, scaler
     else:
         raise ValueError(f"Unsupported covariance type: {covariance_type}. Use 'full' or 'diag'.")
@@ -149,6 +149,8 @@ class HMMRegimeDetector(BaseRegimeDetector):
         transmat: Optional[np.ndarray] = None,
         means: Optional[np.ndarray] = None,
         covars: Optional[np.ndarray] = None,
+        feature_names: Optional[list[str]] = None,
+        scaler: Optional[StandardScaler] = None,
         init_params: str = '',
         **kwargs
     ):
@@ -177,6 +179,9 @@ class HMMRegimeDetector(BaseRegimeDetector):
         self.means = means
         self.covars = covars
         
+        self.feature_names = feature_names
+        self.scaler = scaler
+        
         # Initialize HMM model
         self.model = hmm.GaussianHMM(
             n_components=n_regimes,
@@ -186,13 +191,15 @@ class HMMRegimeDetector(BaseRegimeDetector):
             init_params=init_params,
             **kwargs
         )
+
+        
         
     def fit(self, X: np.ndarray, **kwargs) -> 'HMMRegimeDetector':
         """
         Fit HMM to features.
         
         Args:
-            X: Features array (n_samples, n_features)
+            X: Features array (T, n_features)
             **kwargs: Additional arguments passed to GaussianHMM.fit()
             
         Returns:
@@ -202,7 +209,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         if not isinstance(X, np.ndarray):
             raise TypeError(f"X must be numpy array, got {type(X)}")
         if X.ndim != 2:
-            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+            raise ValueError(f"X must be 2D array (T, n_features), got shape {X.shape}")
         
         # Set initialization parameters if provided
         if self.startprob is not None:
@@ -225,7 +232,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         Predict regime labels using Viterbi algorithm.
         
         Args:
-            X: Features array (n_samples, n_features)
+            X: Features array (T, n_features)
             
         Returns:
             Regime labels array (n_samples,)
@@ -233,51 +240,173 @@ class HMMRegimeDetector(BaseRegimeDetector):
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         
-        if not isinstance(X, np.ndarray):
-            raise TypeError(f"X must be numpy array, got {type(X)}")
         if X.ndim != 2:
-            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
+            raise ValueError(f"X must be 2D array (T, n_features), got shape {X.shape}")
         
         return self.model.predict(X)
     
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def smooth_proba(self, X: np.ndarray) -> np.ndarray:
         """
-        Get regime probabilities using forward algorithm.
+        Smoothed state posteriors, P(z_t | x_1:T). NOT Causal, as uses past and future data in forward-backward algorithm.
         
         Args:
-            X: Features array (n_samples, n_features)
+            X: Features array (T, n_features)
             
         Returns:
-            Regime probabilities array (n_samples, n_regimes)
+            Regime probabilities array (T, n_regimes)
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
-        
-        if not isinstance(X, np.ndarray):
-            raise TypeError(f"X must be numpy array, got {type(X)}")
         if X.ndim != 2:
-            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
-        
+            raise ValueError(f"X must be 2D array (T, n_features), got shape {X.shape}")
+        # hmm returns posterior probabilities from forward-backward algorithm, so NOT causal.
         return self.model.predict_proba(X)
-    
+
+    def filter_proba(self, X: np.ndarray) -> np.ndarray:
+        """
+        Filtered state probabilities P(z_t | x_1:t). Causal, as uses only past data in forward recursion.
+        
+        Args:
+            X: Features array (T, n_features)
+            
+        Returns:
+            Regime probabilities array (T, n_regimes)
+        """
+        def _log_sum_exp(a: np.ndarray, axis=None) -> np.ndarray:
+            """Computes the sum of the exponents of each element in the array a"""
+            a_max = np.max(a, axis=axis, keepdims=True)
+            out = a_max + np.log(np.sum(np.exp(a - a_max), axis=axis, keepdims=True))
+            return np.squeeze(out, axis=axis)
+        
+        def _log_gaussian_pdf_full(X: np.ndarray, means: np.ndarray, covars: np.ndarray) -> np.ndarray:
+            """
+            Computes the log emission likelihood log p(x(t | z_t = k))
+
+            X: (T, d), means (n_regimes, d), covars (n_regimes, d, d)
+            returns loglik (T, n_regimes) with log N(X_t | mean_k, covar_k)
+            """
+            T, d = X.shape
+            n_regimes = means.shape[0]
+            loglik = np.empty((T, n_regimes), dtype=float)
+            const = -0.5 * d * np.log(2 * np.pi)
+
+            for k in range(n_regimes):
+                C = covars[k]
+                # Cholesky decomposition of the covariance matrix C
+                L = np.linalg.cholesky(C)
+                Xm = X - means[k]
+                y = np.linalg.solve(L, Xm.T).T # (T, d)
+                # Magnitude squared of the vector y
+                quad = np.sum(y*y, axis=1)
+                logdet = 2.0 * np.sum(np.log(np.diag(L)))
+                loglik[:, k] = const - 0.5 * (quad + logdet)
+                
+            return loglik
+
+        def _log_gaussian_pdf_diag(X: np.ndarray, means: np.ndarray, covars: np.ndarray) -> np.ndarray:
+            """
+            X: (T,d), means: (K,d), covars: (K,d) variances
+            returns (T,K)
+            """
+            T, d = X.shape
+            n_regimes = means.shape[0]
+            loglik = np.empty((T, n_regimes), dtype=float)
+            const = -0.5 * d * np.log(2 * np.pi)
+            for k in range(n_regimes):
+                var = covars[k]
+                var = np.maximum(var, 1e-8)
+                Xm = X - means[k]
+                quad = np.sum((Xm * Xm) / var, axis=1)
+                logdet = np.sum(np.log(var))
+                loglik[:, k] = const - 0.5 * (logdet + quad)
+            return loglik
+
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+
+        # Pull HMM parameters from fitted model
+        A = np.asarray(self.model.transmat_, dtype=float)   # (K,K) - transition matrix
+        pi = np.asarray(self.model.startprob_, dtype=float) # (K,)  - initial state probabilities
+        means = np.asarray(self.model.means_, dtype=float)  # (K,d) - emission means
+
+        n_regimes, d = means.shape
+        assert A.shape == (n_regimes, n_regimes)
+        assert pi.shape == (n_regimes,)
+        assert np.allclose(pi.sum(), 1.0, atol=1e-6)
+        assert np.allclose(A.sum(axis=1), 1.0, atol=1e-6)
+
+        # Pull emission covariances from fitted model (differerent functions for full and diagonal covariance matrices)
+        if self.model.covariance_type == 'full':
+            covars = np.asarray(self.model.covars_, dtype=float)    # (K,d,d)
+            # emission log-likelihoods for full covariance matrices
+            logB = _log_gaussian_pdf_full(X, means, covars)         # (T,K)
+        elif self.model.covariance_type == 'diag':
+            covars = np.asarray(self.model.covars_, dtype=float)
+            # check what dimension hmmlearn returns for covariance matrices
+            if covars.ndim == 3:
+                covars = np.diagonal(covars, axis1=1, axis2=2)      # (K,d)
+            #emission log-likelihoods for diagonal covariance matrices
+            logB = _log_gaussian_pdf_diag(X, means, covars)         # (T,K)
+        else:
+            raise NotImplementedError(f"Unsupported covariance type: {self.model.covariance_type}. Use 'full' or 'diag'.")
+
+        if not np.isfinite(logB).all():
+            raise ValueError("Non-finite emission log-likelihoods (logB). Check covars / scaling.")
+
+        T, n_regimes = logB.shape
+
+        # convert transitions and initial state probabilities to log space
+        logA = np.log(np.maximum(A, 1e-300))
+        logpi = np.log(np.maximum(pi, 1e-300))
+        
+        # forward recursion in log space
+        log_alpha = np.zeros((T, n_regimes))
+
+        # t=0, bayes rule + normalisation
+        log_alpha[0] = logpi + logB[0]
+        log_alpha[0] -= _log_sum_exp(log_alpha[0])
+
+        # t=1, ..., T-1
+        for t in range(1, T):
+            # log_pred[k] = log sum_i exp(log_alpha[t-1, i] + logA[i, k])
+            log_pred = _log_sum_exp(log_alpha[t-1][:, None] + logA, axis=0) # (K,)
+
+            log_alpha[t] = logB[t] + log_pred
+            log_alpha[t] -= _log_sum_exp(log_alpha[t])
+
+        return np.exp(log_alpha)
+
+    def forecast_n_steps(self,
+        proba: np.ndarray,
+        n: int
+    ) -> np.ndarray:
+        """
+        n-step ahead regime forecast, gives a forecast for the next n regimes for every time t
+
+        alpha_t: (n_regimes), filtered regime probabilities at time t
+        A: (n_regimes, n_regimes), transition matrix
+        n: forecast horizon
+        
+        returns: (n_regimes, n_steps)
+        """
+        A = np.asarray(self.model.transmat_, dtype=float)
+        A_n = np.linalg.matrix_power(A, n)
+        return proba @ A_n
+
     def score(self, X: np.ndarray) -> float:
         """
         Compute log-likelihood of data under the fitted model.
         
         Args:
-            X: Features array (n_samples, n_features)
+            X: Features array (T, n_features)
             
         Returns:
             Log-likelihood score
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
-        
-        if not isinstance(X, np.ndarray):
-            raise TypeError(f"X must be numpy array, got {type(X)}")
         if X.ndim != 2:
             raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
-        
         return self.model.score(X)
     
     def get_transition_matrix(self) -> np.ndarray:

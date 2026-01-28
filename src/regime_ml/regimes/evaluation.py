@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
+from regime_ml.regimes.hmm import HMMRegimeDetector
 
 def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
     """
@@ -61,7 +62,6 @@ def compare_models(
     X = features.values
     
     results = []
-    
     for name, model in models.items():
         model.fit(X)
         regimes = model.predict(X)
