@@ -3,12 +3,11 @@ import pandas as pd
 from pathlib import Path
 import pickle
 from hmmlearn import hmm
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 
 from .base import BaseRegimeDetector
-
 
 def initialise_emissions(
     df_train: pd.DataFrame,
@@ -180,6 +179,8 @@ class HMMRegimeDetector(BaseRegimeDetector):
         self.covars = covars
         
         self.feature_names = feature_names
+        self.state_labels: Dict[int, str] = {}
+    
         self.scaler = scaler
         
         # Initialize HMM model

@@ -6,6 +6,7 @@ from .alignment import add_staleness_indicators, align_to_calendar
 from .selector import select_data
 from .validators import validate_data, print_validation_report
 from .pipeline import run_macro_data_pipeline
+from .build_featuregroup_map import build_featuregroup_map
 
 __all__ = [
     # Loaders
@@ -29,4 +30,7 @@ __all__ = [
     
     # Pipeline
     'run_macro_data_pipeline',
+
+    # Build featuregroup map
+    'build_featuregroup_map',
 ]

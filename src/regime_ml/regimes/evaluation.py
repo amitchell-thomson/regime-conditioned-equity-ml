@@ -1,23 +1,9 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
-from regime_ml.utils.config import load_configs
-from regime_ml.data.common.loaders import load_dataframe
 from sklearn.covariance import LedoitWolf
-from regime_ml.regimes.hmm import HMMRegimeDetector
+from regime_ml.data.macro import build_featuregroup_map
 from regime_ml.features.macro.selection import get_top_features
-
-def build_featuregroup_map(all_feature_names: list[str]) -> dict[str, str]:
-    macro_cfg = load_configs()["macro_data"]["regime_universe"]
-    df_group = load_dataframe(macro_cfg["raw_path"])
-
-    code_to_cat = dict(zip(df_group["series_code"], df_group["category"]))
-
-    out: dict[str, str] = {}
-    for feat in all_feature_names:
-        ticker = feat.split("_")[0]  # e.g. "VIXCLS_level_zscore_63" -> "VIXCLS"
-        out[feat] = code_to_cat.get(ticker, "unknown")
-    return out
 
 def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
     """
@@ -350,3 +336,70 @@ def compare_hmm_models(
         }
 
     return results
+
+
+def equity_metrics_by_regime(
+    px: pd.Series,
+    regimes: pd.Series | np.ndarray,
+    *,
+    freq: int = 252,
+    rf_annual: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Compute average equity metrics per regime.
+
+    Args:
+        px: price series indexed by date (e.g. SPY adj close)
+        regimes: regime labels indexed by date (pd.Series) OR numpy array aligned to px index
+        freq: trading days per year
+        rf_annual: annual risk-free rate (e.g. 0.03 for 3%)
+
+    Returns:
+        DataFrame with metrics per regime.
+    """
+    # px = px.dropna().astype(float)
+
+    if isinstance(regimes, pd.Series):
+        df = pd.DataFrame({"px": px}).join(regimes.rename("regime"), how="inner")
+    else:
+        # assume regimes is aligned to px index
+        df = pd.DataFrame({"px": px, "regime": np.asarray(regimes)}, index=px.index)
+
+    df = df.dropna()
+    df["ret"] = df["px"].pct_change()
+    df = df.dropna(subset=["ret"])
+
+    rf_daily = (1.0 + rf_annual) ** (1.0 / freq) - 1.0
+
+    out = []
+    for r, g in df.groupby("regime"):
+        rets = g["ret"].to_numpy()
+        n = len(rets)
+        if n < 2:
+            continue
+
+        mean_daily = float(np.mean(rets))
+        vol_daily = float(np.std(rets, ddof=1))
+        ann_ret = float((1.0 + mean_daily) ** freq - 1.0)
+        ann_vol = float(vol_daily * np.sqrt(freq))
+
+        ex_daily = mean_daily - rf_daily
+        sharpe = float((ex_daily / vol_daily) * np.sqrt(freq)) if vol_daily > 0 else np.nan
+
+        # max drawdown within that regime's subsequence (contiguous in time is not required for this simple view)
+        wealth = np.cumprod(1.0 + rets)
+        peak = np.maximum.accumulate(wealth)
+        mdd = float(np.min(wealth / peak - 1.0))
+
+        out.append({
+            "regime": r,
+            "n_days": n,
+            "mean_daily_ret": mean_daily,
+            "ann_return": ann_ret,
+            "ann_vol": ann_vol,
+            "sharpe": sharpe,
+            "max_drawdown": mdd,
+            "up_day_frac": float(np.mean(rets > 0)),
+        })
+
+    return pd.DataFrame(out).sort_values("ann_return", ascending=False).reset_index(drop=True)
