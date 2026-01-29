@@ -1,6 +1,6 @@
 from .base import BaseRegimeDetector
 from .hmm import HMMRegimeDetector
-from .evaluation import evaluate_regime_stability, compare_models
+from .evaluation import compare_hmm_models
 from .visualisation import (
     plot_regime_timeseries,
     plot_regime_distributions,
@@ -14,8 +14,7 @@ from .visualisation import (
 __all__ = [
     "HMMRegimeDetector",
     "BaseRegimeDetector",
-    "evaluate_regime_stability",
-    "compare_models",
+    "compare_hmm_models",
     "plot_regime_timeseries",
     "plot_regime_distributions",
     "plot_transition_matrix",
