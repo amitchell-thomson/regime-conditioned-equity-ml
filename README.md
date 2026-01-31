@@ -117,9 +117,87 @@ This core set balances **interpretability** (can name regimes), **statistical ef
 
 ### Phase 2 - Regime Detection
 
-- Unsupervised regime inference (eg. HMMs, clustering)
-- Volatility and correlation-based regime definitions
-- Regime stability and transition dynamics
+**Status:** In Progress — HMM-based regime detection with evaluation, selection, and labeling implemented
+
+Unsupervised regime inference using Hidden Markov Models with Gaussian emissions. The implementation follows a two-stage evaluation philosophy: macro-quality filters (Stage A) first, then downstream equity usefulness (Stage B).
+
+---
+
+#### **HMM Regime Detector** (`src/regime_ml/regimes/hmm.py`)
+
+**Model:**
+- Gaussian HMM with configurable covariance type (`full`, `diag`)
+- KMeans-based initialization for emission means and covariances via `initialise_emissions()`
+- Custom transition matrix initialization via `initialise_transitions(p_stay)`
+- Train/test split with scaling (StandardScaler) fitted on training data only
+
+**Probabilities:**
+- **Filtered** `filter_proba(X)` — Causal, uses only past data. For live/backtest use.
+- **Smoothed** `smooth_proba(X)` — Non-causal, uses full history. For diagnostics and labeling.
+- **Forecast** `forecast_n_steps(proba, n)` — n-step-ahead regime forecast from transition matrix
+
+**Key Methods:**
+- `fit(X)`, `predict(X)` — numpy arrays (n_samples, n_features)
+- `get_transition_matrix()`, `get_regime_means()`, `get_regime_covariances()`
+- `save(path)`, `load(path)` — pickle serialization
+
+---
+
+#### **Stage A: Macro-Regime Quality** (`src/regime_ml/regimes/evaluation.py`)
+
+**Metrics computed per model:**
+
+| Metric | Function | Purpose |
+|--------|----------|---------|
+| Regime persistence | `evaluate_regime_stability()` | Mean duration, n_transitions, regime share balance |
+| Entropy balance | `evaluate_entropy_balance()` | Penalise collapsed/unused regimes |
+| Transition sanity | `evaluate_transmat_sanity()` | Implied duration, diagonal dominance, mixing |
+| Macro coherence | `evaluate_macro_coherence()` | Mahalanobis distance between regime means, ANOVA R² |
+
+**Model Comparison:** `compare_hmm_models(features, models)` evaluates multiple trained HMMs on full sample and separately on in-sample vs out-of-sample slices. Requires models dict with `model`, `n_features`, `scaler`, `split_date`.
+
+---
+
+#### **Model Selection** (`src/regime_ml/regimes/selection.py`)
+
+`select_best_hmm_model(results, ...)` applies:
+
+**Hard filters (reject):** invalid transition matrix, dead regimes (min_share), collapsed regimes (max_share), absorbing regimes (max_implied_duration), redundant regimes (maha_min below quantile), OOS robustness failures.
+
+**Composite score:** weighted combination of macro_score (40%), transition_score (30%), stability_score (25%), oos_macro_score (5%).
+
+**Output:** `best_model_id`, leaderboard DataFrame (top_n survivors), rejected DataFrame (model_id + reason).
+
+---
+
+#### **Regime Labeling** (`src/regime_ml/regimes/labeling.py`)
+
+`label_regimes(X, proba, feature_names)` assigns interpretable names to regimes using macro group signatures (growth, inflation, rates, liquidity, stress). Returns `state_labels`, `state_group_scores`, `state_feature_means` for use in visualisation and reporting.
+
+---
+
+#### **Stage B: Equity Usefulness** (`src/regime_ml/regimes/evaluation.py`)
+
+`equity_metrics_by_regime(px, regimes, ...)` computes per-regime equity metrics: ann_return, ann_vol, Sharpe, max_drawdown, up_day_frac. Uses **filtered** regime labels (causal). Stage B uplift testing (regime-conditioned vs unconditional models) is planned.
+
+---
+
+#### **Visualisation** (`src/regime_ml/regimes/visualisation.py`)
+
+- `plot_regime_timeseries()` — Regime labels, feature values, regime probabilities over time
+- `plot_regime_distributions()` — Feature box plots by regime
+- `plot_transition_matrix()` — Heatmap of regime transition probabilities
+- `plot_regime_periods()` — Gantt-style regime timeline
+- `plot_regime_confidence()` — Classification confidence over time
+- `create_regime_summary_table()` — Metrics summary
+- `plot_ticker_by_regime()` — Equity performance by regime
+
+---
+
+#### **Configuration & Plan**
+
+- **Evaluation plan:** `src/regime_ml/regimes/evaluation_plan.md` — Full two-stage evaluation philosophy, metrics, scoring, and selection workflow
+- **Feature groups:** `build_featuregroup_map()` from `regime_ml.data.macro` maps features to macro categories for coherence metrics and labeling
 
 ### Phase 3 - Regime-Conditioned Models
 
