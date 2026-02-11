@@ -207,8 +207,6 @@ class HMMRegimeDetector(BaseRegimeDetector):
             self (fitted model)
         """
         # Validate input
-        if not isinstance(X, np.ndarray):
-            raise TypeError(f"X must be numpy array, got {type(X)}")
         if X.ndim != 2:
             raise ValueError(f"X must be 2D array (T, n_features), got shape {X.shape}")
         

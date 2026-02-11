@@ -53,6 +53,7 @@ class BaseRegimeDetector(ABC):
         """
         ...
 
+
     def fit_predict(self, X: np.ndarray) -> np.ndarray:
         """Convenience method: fit and predict in one call."""
         self.fit(X)

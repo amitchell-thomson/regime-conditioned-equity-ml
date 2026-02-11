@@ -80,10 +80,10 @@ def label_regimes(
     zs = zscore(stress)
 
     labels = [
-        ("Early Expansion / Liquidity Driven",          +1.3*zg + 1.1*zl - 1.4*zi - 1.0*zs - 0.3*zr),
-        ("Recession / Risk-Off",                        -1.4*zg - 0.6*zl + 1.4*zs + 0.3*zi),
-        ("Stagflation",                                 -1.1*zg + 1.5*zi + 0.6*zs + 0.3*zr),
-        ("Policy-Contstrained Expansion",               +1.2*zi + 1.3*zr - 0.9*zl - 0.4*zg),
+        ("Risk On - Expansion               ",                    +1.3*zg + 1.1*zl - 1.4*zi - 1.0*zs - 0.3*zr),
+        ("Risk On - Stagflation",                                 -1.1*zg + 1.5*zi + 0.6*zs + 0.3*zr),
+        ("Risk On - Policy-Contstrained Expansion",               +1.2*zi + 1.3*zr - 0.9*zl - 0.4*zg),
+        ("Risk Off - Recession",                                  -1.4*zg - 0.6*zl + 1.4*zs + 0.3*zi),
     ]
 
     # pick best label per regime
