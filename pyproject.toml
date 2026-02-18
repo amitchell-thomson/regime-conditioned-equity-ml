@@ -1,7 +1,7 @@
 [project]
 name = "regime-conditioned-equity-ml"
 version = "0.1.0"
-description = "Add your description here"
+description = "A research-grade equity trading engine than detects market regimes and conditions predictive machine learning models on regime-specific dynamics to handle financial non-stationarity"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -39,3 +39,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v"
