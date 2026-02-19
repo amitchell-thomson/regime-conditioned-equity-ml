@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import pickle
+import warnings
 from hmmlearn import hmm
 from typing import Optional, Tuple, Dict
 from sklearn.preprocessing import StandardScaler
@@ -142,7 +143,8 @@ class HMMRegimeDetector(BaseRegimeDetector):
         self,
         n_regimes: int = 4,
         covariance_type: str = 'full',
-        n_iter: int = 1000,
+        n_iter: int = 500,
+        tol: float = 1e-4,
         random_state: int = 42,
         startprob: Optional[np.ndarray] = None,
         transmat: Optional[np.ndarray] = None,
@@ -160,6 +162,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
             n_regimes: Number of hidden states (regimes)
             covariance_type: 'full', 'diag', 'spherical', 'tied'
             n_iter: Maximum EM iterations
+            tol: Convergence tolerance
             random_state: Random seed for reproducibility
             startprob: Optional initial state probabilities (n_regimes,)
             transmat: Optional transition matrix (n_regimes, n_regimes)
@@ -171,6 +174,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         super().__init__(n_regimes=n_regimes)
         self.covariance_type = covariance_type
         self.n_iter = n_iter
+        self.tol = tol
         self.random_state = random_state
 
         self.startprob = startprob
@@ -188,13 +192,12 @@ class HMMRegimeDetector(BaseRegimeDetector):
             n_components=n_regimes,
             covariance_type=covariance_type,
             n_iter=n_iter,
+            tol=tol,
             random_state=random_state,
             init_params=init_params,
             **kwargs
         )
 
-        
-        
     def fit(self, X: np.ndarray, **kwargs) -> 'HMMRegimeDetector':
         """
         Fit HMM to features.
@@ -222,7 +225,8 @@ class HMMRegimeDetector(BaseRegimeDetector):
 
         # Fit HMM
         self.model.fit(X, **kwargs)
-        
+        if not self.model.monitor_.converged:
+            warnings.warn(f"HMM fit did not converge after {self.n_iter} iterations.")
         self.is_fitted = True
         return self
     
@@ -291,6 +295,8 @@ class HMMRegimeDetector(BaseRegimeDetector):
 
             for k in range(n_regimes):
                 C = covars[k]
+                # add a small jitter to ensure positive semi-definitivity
+                C = C + 1e-8 * np.eye(d)
                 # Cholesky decomposition of the covariance matrix C
                 L = np.linalg.cholesky(C)
                 Xm = X - means[k]

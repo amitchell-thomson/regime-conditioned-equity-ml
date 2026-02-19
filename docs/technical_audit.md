@@ -6,9 +6,475 @@
 
 ---
 
-## 1. Macro Data Engineering & Integrity
+## Summary
 
-### 1.1 CRITICAL: Staleness Detection via Value Equality Is Wrong
+The architecture is well-structured and the staleness-aware transform framework is a genuinely good idea that most ML pipelines miss. The HMM implementation (especially the hand-rolled causal filter) shows technical competence. However, the system has several critical methodological gaps (revision handling, multi-seed, BIC, OOS protocol) that would be caught in any professional review. Fix these before building downstream models — regime conditioning is only as reliable as the regime labels, and right now those labels are not defensible.
+
+---
+
+## Assessment
+
+### What's Strong
+
+- Architecture is well-structured (staged pipeline, YAML config, transform registry)
+- Staleness-aware transform framework is a genuinely good design
+- Hand-rolled causal filter (`filter_proba`) shows technical competence
+
+### Critical Gaps (Interview / Deployment Blockers)
+
+| Gap | Step | Question a Senior Quant Would Ask |
+| --- | ---- | --------------------------------- |
+| No FRED revision handling | 2.4 | "How do you handle FRED revisions?" |
+| Single-seed HMM | 3.1 | "Did you test multiple initializations?" |
+| No BIC/AIC | 4.1 | "Where is your BIC?" |
+| Gaussian assumption unvalidated | 3.3 | "Did you validate Gaussian emissions with VIX in the feature set?" |
+| 5% OOS weight | 1.2a | "What's your OOS protocol?" |
+| Empty test suite | 6.2 | (signals system hasn't been validated beyond notebooks) |
+| Hardcoded feature ranking | 4.3 | (looks like output was reverse-engineered to match expectations) |
+
+### Polish Issues (GitHub / Presentation Blockers)
+
+- Empty test files committed to git
+- `print()` statements instead of `logging`
+- Hardcoded personal paths in production code
+- No experiment tracking — results live only in notebook memory
+- Labels with trailing whitespace and typos
+- Magic numbers without justification
+- Pickle serialization
+- `# type: ignore` comments scattered throughout (17+ occurrences) → Step 7.5
+
+### Pre-Deployment Checklist
+
+- [ ] Fix lookahead bias in macro data — use vintage data or apply publication lags (Step 2.4)
+- [ ] Fix staleness detection — use actual observation flags, not value-change detection (Step 2.1)
+- [ ] Ensure scaler is IS-only — verify no OOS leakage (Step 2.2)
+- [ ] Add multi-seed initialization — current results may be a local optimum (Step 3.1)
+- [ ] Add BIC/AIC — without complexity penalty, model selection is biased toward overfitting (Step 4.1)
+- [ ] Increase OOS weight — 5% is negligible (Step 1.2a)
+- [ ] Use filter_proba for OOS evaluation — smooth_proba leaks within-window information (Step 1.4)
+- [ ] Validate Gaussian assumption — add QQ diagnostics, consider t-emissions (Step 3.3)
+- [ ] Check convergence — `model.monitor_.converged` (Step 1.1a)
+
+### Pre-GitHub Checklist
+
+- [ ] Remove hardcoded paths — `/Users/alecmitchell-thomson/...` appears in loaders.py and YAML (Step 1.7b)
+- [ ] Fix empty test files — conftest.py, test_transforms.py, test_registry.py are all 0 bytes (Step 6.2)
+- [ ] Fix the broken test — `test_get_feature_names` asserts wrong values (Step 1.6)
+- [ ] Fix typo — "Policy-Contstrained" (Step 1.3a)
+- [ ] Replace `print()` with `logging` — 180 print calls across 9 files; add NullHandler to package root (Steps 1.9a, 2.0)
+- [ ] Remove `.env` from repo — it's listed in the project and likely contains FRED API keys
+- [ ] Add CI/CD — no GitHub Actions for tests/lint (Step 7.4)
+- [ ] Resolve `# type: ignore` comments — 17+ occurrences silently suppress type errors (Step 7.5)
+
+---
+
+## Implementation Plan
+
+### Recommended Sprint Order
+
+1. **Day 1 — Phase 1 (Quick Wins)**: Low-effort, high-signal fixes including logging infrastructure (NullHandler + pytest config). These are prerequisites for everything that follows.
+2. **Week 1 — Phase 2 (Data Integrity)**: Start by replacing 180 `print()` calls with structured logging so pipeline output is observable as you work through fixes. Then: staleness detection, IS-only scaler, max staleness, ALFRED/lag handling (hardest and most important).
+3. **Week 2 — Phase 3 (HMM Model)**: Multi-seed initialization, Ledoit-Wolf covariance, QQ diagnostics.
+4. **Week 2 — Phase 4 (Model Selection)**: BIC, normalized scoring.
+5. **Week 3 — Phase 5 (Labels) + Phase 6 (Tests)**: Dynamic labels, episode validation, then experiment tracking, file handler for audit trail, and core test suite.
+6. **Week 4 — Phase 7 (Code Quality) + Phase 4 remainder**: Portability cleanup, then expanding-window CV if time allows.
+
+---
+
+## Phase 1 — Quick Wins
+
+Low-effort fixes that can be completed in a single focused session. Grouped by file to minimise context switching.
+
+---
+
+### 1.1 `src/regime_ml/regimes/hmm.py` (3 fixes)
+
+#### a) Add Convergence Diagnostics
+
+**Priority**: HIGH | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/hmm.py:223-226`
+```python
+self.model.fit(X, **kwargs)
+self.is_fitted = True
+return self
+```
+
+**Why dangerous**: The EM algorithm may not converge within `n_iter=1000`, converge to a local optimum, or converge to a degenerate solution where one regime captures <1% of data. None of these are detected or logged. `hmmlearn` sets `model.monitor_.converged` but this is never checked.
+
+**Fix**:
+```python
+self.model.fit(X, **kwargs)
+if not self.model.monitor_.converged:
+    warnings.warn(f"HMM did not converge after {self.n_iter} iterations")
+self.is_fitted = True
+```
+Also log `self.model.monitor_.history` (the log-likelihood trace) to detect oscillation vs. convergence.
+
+---
+
+#### b) Add Cholesky Jitter in `filter_proba`
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/hmm.py:295`
+```python
+L = np.linalg.cholesky(C)
+```
+
+**Why dangerous**: If the covariance matrix `C` is not strictly positive definite (e.g., numerical precision issues after EM), `cholesky` will raise `LinAlgError`. There's no try/catch or jitter.
+
+**Fix**: Add a small jitter: `C = C + np.eye(d) * 1e-8` before Cholesky. Or use `scipy.linalg.cho_factor` which handles near-singular cases more gracefully.
+
+---
+
+#### c) Use Convergence Tolerance Instead of Fixed Iterations
+
+**Priority**: LOW | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/hmm.py:145`
+
+1000 EM iterations is generous. Most well-initialized HMMs converge in 50-200 iterations. However, with poor initialization or near-degenerate solutions, 1000 may still not be enough.
+
+**Fix**: Use `tol` (convergence threshold on log-likelihood improvement) instead of fixed iterations. hmmlearn supports `tol` parameter. Set `n_iter=500, tol=1e-4` and check convergence.
+
+---
+
+### 1.2 `src/regime_ml/regimes/selection.py` (2 fixes)
+
+#### a) Increase OOS Weight from 5% to ≥25%
+
+**Priority**: HIGH | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/selection.py:147-152`
+```python
+survivors["final_score"] = (
+    0.40 * survivors["macro_score"] +
+    0.30 * survivors["transition_score"] +
+    0.25 * survivors["stability_score"] +
+    0.05 * survivors["oos_macro_score"]
+)
+```
+
+**Why dangerous**: OOS performance gets 5% weight. This is essentially decorative. A model that collapses OOS but scores well IS will still win. This defeats the entire purpose of having an OOS evaluation.
+
+**Fix**: Increase OOS weight to at least 20-30%. Better yet, restructure as: IS score selects candidates, OOS score selects the winner. A model that doesn't generalize OOS is worthless regardless of IS metrics.
+
+---
+
+#### b) Document Hard Filter Thresholds
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/selection.py:34-40`
+```python
+min_share: float = 0.03,
+max_share: float = 0.80,
+oos_min_share: float = 0.02,
+oos_max_share: float = 0.85,
+max_implied_duration: float = 3000.0,
+```
+
+**Why dangerous**: These thresholds are arbitrary magic numbers. Why is 3% the minimum share? Why 3000 days for max duration? A senior quant would immediately ask for the justification.
+
+**Fix**: Either derive thresholds from economic priors (e.g., "we expect no regime shorter than 6 months ≈ 125 days, so minimum share = 125/5000 ≈ 2.5%") or use data-driven thresholds (e.g., percentiles of the candidate pool). Document the reasoning.
+
+---
+
+### 1.3 `src/regime_ml/regimes/labeling.py` (2 fixes)
+
+#### a) Fix Typo and Trailing Whitespace in Labels
+
+**Priority**: HIGH | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/labeling.py:82-87`
+```python
+labels = [
+    ("Risk On - Expansion               ",                    +1.3*zg + 1.1*zl - 1.4*zi - 1.0*zs - 0.3*zr),
+    ("Risk On - Stagflation",                                 -1.1*zg + 1.5*zi + 0.6*zs + 0.3*zr),
+    ("Risk On - Policy-Contstrained Expansion",               +1.2*zi + 1.3*zr - 0.9*zl - 0.4*zg),
+    ("Risk Off - Recession",                                  -1.4*zg - 0.6*zl + 1.4*zs + 0.3*zi),
+]
+```
+
+**Problems**:
+1. **Typo**: "Policy-Contstrained" (missing 'r')
+2. **Trailing whitespace** in "Risk On - Expansion               " — will cause display/comparison issues
+
+**Fix**: Fix the typo and remove trailing whitespace.
+
+---
+
+#### b) Document That Labeling Uses Smoothed Probabilities
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/labeling.py:40-41`
+```python
+Nk = np.maximum(gamma.sum(axis=0), 1e-12)
+mu_k = (gamma.T @ X) / Nk[:, None]
+```
+
+Using smoothed (non-causal) probabilities to compute regime means includes future information. The "mean stress level in Regime 2" is computed using data points weighted by probabilities that depend on future observations. This is fine for interpretation but misleading if you intend to use these means for online classification.
+
+**Fix**: Clearly document that labeling uses smoothed probabilities (interpretation only). For any live signal, use filter_proba-weighted means.
+
+---
+
+### 1.4 `src/regime_ml/regimes/evaluation.py` — Use `filter_proba` for OOS Evaluation
+
+**Priority**: HIGH | **Effort**: Quick
+
+**File**: `src/regime_ml/regimes/evaluation.py:288-289`
+```python
+smooth_is = model.smooth_proba(X_is) if X_is.shape[0] > 0 else None
+smooth_oos = model.smooth_proba(X_oos) if X_oos.shape[0] > 0 else None
+```
+
+**Why dangerous**: `smooth_proba` runs the forward-backward algorithm within each slice independently, so IS and OOS are separated. However, using smoothed probabilities for OOS evaluation is still methodologically suspect: in a real trading system, you would only have `filter_proba` (causal). Evaluating with smoothed probabilities inflates OOS coherence metrics because the backward pass uses "future" information within the OOS window itself.
+
+**Fix**: OOS evaluation should use `filter_proba` exclusively. Reserve `smooth_proba` for IS analysis/interpretation only.
+
+---
+
+### 1.5 `src/regime_ml/data/macro/alignment.py` — Vectorize `days_since_update` Calculation
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/data/macro/alignment.py:83-87`
+```python
+last_update_date = aligned[aligned['is_new_data'] == True].index
+aligned['days_since_update'] = 0
+for date in aligned.index:
+    days_since = (date - last_update_date[last_update_date <= date].max()).days
+    aligned.loc[date, 'days_since_update'] = days_since
+```
+
+**Why dangerous**: If there are no `is_new_data == True` entries before a given date (e.g., the series starts mid-way through the calendar), `last_update_date[last_update_date <= date]` is empty and `.max()` raises or returns `NaT`, causing the `.days` call to fail silently or produce incorrect values. Additionally, this is O(T * N) per series — extremely slow.
+
+**Fix**: Use vectorized forward-fill of the last update date:
+```python
+aligned['last_update'] = aligned.index.where(aligned['is_new_data'] == True)
+aligned['last_update'] = aligned['last_update'].ffill()
+aligned['days_since_update'] = (aligned.index - aligned['last_update']).dt.days
+```
+
+---
+
+### 1.6 `tests/test_transform_parser.py` — Fix Broken `test_get_feature_names` Test
+
+**Priority**: LOW | **Effort**: Quick
+
+**File**: `tests/test_transform_parser.py:16-21`
+```python
+def test_get_feature_names():
+    parser = TransformParser()
+    chain = parser.parse_chain([{"diff": {"periods": 21}}, {"z_score": {"window": 252}}])
+    feature_names = parser.get_feature_names("vix", [chain])
+    assert len(feature_names) == 2
+    assert feature_names[0] == "diff_21"
+    assert feature_names[1] == "z_score_252"
+```
+
+`get_feature_names` returns one name per chain, not per transform. A chain of [Diff, ZScore] should produce 1 feature name (e.g., `vix_diff_21_zscore_252`), not 2. The assertion `len(feature_names) == 2` is wrong — this is testing that a single chain produces 2 names, which contradicts the implementation at line 134 of `transform_parser.py` where each *chain* produces one name.
+
+**Fix**: Fix the test to `assert len(feature_names) == 1` and `assert feature_names[0] == "vix_diff_21_zscore_252"`.
+
+---
+
+### 1.7 Configuration & Defaults (2 fixes)
+
+#### a) Change `random_state` Defaults to `None`
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**Files**: `src/regime_ml/regimes/hmm.py:174`, `src/regime_ml/regimes/hmm.py:15`
+
+Both `HMMRegimeDetector` and `initialise_emissions` default to `random_state=42`. This is fine for reproducibility but the default should be `None` (random) with 42 used only when explicitly testing. The current setup gives a false sense of robustness — the researcher always gets the same result but doesn't know if it's stable.
+
+**Fix**: Change `random_state` defaults to `None`; require explicit seed when testing.
+
+---
+
+#### b) Replace Hardcoded Paths with Environment Variables
+
+**Priority**: LOW (but HIGH if publishing) | **Effort**: Quick
+
+**File**: `src/regime_ml/data/macro/loaders.py:12`
+```python
+source_dir: Union[str, Path] = "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro",
+```
+
+**File**: `configs/data/regime_universe.yaml:5`
+```yaml
+data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
+```
+
+**Why dangerous**: Machine-specific paths break portability. Anyone cloning this repo will get `FileNotFoundError` immediately.
+
+**Fix**: Use environment variables or a `.env`-based path resolution. The loader should raise a clear error if `DATA_DIR` is not set rather than falling back to a hardcoded path.
+
+---
+
+### 1.8 Feature Pipeline (3 fixes)
+
+#### a) Validate Feature Names at Runtime
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/features/macro/selection.py:19-71`
+
+This function is a 70-line hardcoded list masquerading as a function. If any transform parameter changes in `regime_universe.yaml`, the feature names here silently become stale and won't match actual features.
+
+**Fix**: Validate that all names returned by `get_top_features()` exist in the actual feature set at runtime.
+
+---
+
+#### b) Cache `build_featuregroup_map` Result
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/data/macro/build_featuregroup_map.py:5-6`
+```python
+macro_cfg = load_configs()["macro_data"]["regime_universe"]
+df_group = load_dataframe(macro_cfg["raw_path"])
+```
+
+This function is called from `evaluation.py` and `labeling.py`, potentially multiple times per model comparison. Each call reads YAML configs and loads a parquet file from disk.
+
+**Fix**: Cache the result or pass the mapping as a parameter.
+
+---
+
+#### c) Override `ChainedTransform._compute` to Prevent Staleness Bypass
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/features/common/transforms/base.py:114-118`
+```python
+def _compute(self, series: pd.Series) -> pd.Series:
+    result = series
+    for transform in self.transforms:
+        result = transform._compute(result)
+    return result
+```
+
+`ChainedTransform._compute` calls `_compute` on each child (not `transform`), bypassing staleness handling. However, `ChainedTransform.transform` correctly calls each child's `transform` method. The risk is that if anyone calls `chain._compute(series)` directly, staleness is silently ignored.
+
+**Fix**: Override `_compute` to raise `NotImplementedError("Use transform() for ChainedTransform")` or make it call `transform()` on children.
+
+---
+
+### 1.9 Logging Infrastructure (2 fixes)
+
+These are prerequisites for Phase 2. They take <30 minutes and make all subsequent pipeline output observable and suppressible.
+
+#### a) Add Package-Level Logger Configuration
+
+**Priority**: MEDIUM | **Effort**: Quick
+
+**File**: `src/regime_ml/__init__.py`
+
+No `logging` module usage exists anywhere. The correct library pattern is to install a `NullHandler` at the package root so downstream tools and tests can control output. Without it, any `print()` that survives the Phase 2 migration still has no controllable output channel.
+
+**Fix**:
+```python
+# src/regime_ml/__init__.py
+import logging
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+```
+
+Each module then declares its own child logger at the top of the file:
+```python
+import logging
+logger = logging.getLogger(__name__)
+```
+
+Callers (notebooks, scripts) configure output as needed:
+```python
+logging.basicConfig(level=logging.INFO)
+```
+
+---
+
+#### b) Configure pytest Logging Capture
+
+**Priority**: LOW | **Effort**: Quick
+
+**Files**: `pyproject.toml`, `tests/conftest.py`
+
+`conftest.py` is empty. pytest swallows log records unless `log_cli` is enabled. Test failures currently show no logging context, and `WARNING`-level validator output is silently dropped.
+
+**Fix** — add to `pyproject.toml`:
+```toml
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "WARNING"
+log_level = "DEBUG"
+```
+
+Add to `tests/conftest.py`:
+```python
+import logging
+
+logging.getLogger("hmmlearn").setLevel(logging.ERROR)
+logging.getLogger("matplotlib").setLevel(logging.ERROR)
+```
+
+---
+
+## Phase 2 — Data Integrity
+
+Fix before touching any model. These create lookahead bias or corrupt the feature values that everything downstream depends on.
+
+Start with 2.0 (print→logging) so that all pipeline output from 2.1 onward is structured, observable, and suppressible in tests.
+
+---
+
+### 2.0 Replace `print()` with Structured Logging
+
+**Priority**: MEDIUM | **Effort**: Medium
+
+**Files**: 9 files, 180 total print statements
+
+| File | Prints | Appropriate Level |
+|------|--------|-------------------|
+| `features/macro/validator.py` | 69 | `DEBUG` (per-check diagnostics), `WARNING` (failures) |
+| `data/macro/validators.py` | 32 | `INFO` (summary lines), `WARNING` (data issues) |
+| `data/macro/pipeline.py` | 30 | `INFO` (stage progress, timing) |
+| `data/macro/loaders.py` | 12 | `INFO` (file load status) |
+| `features/macro/pipeline.py` | 11 | `INFO` (pipeline progress, date range, save path) |
+| `data/macro/cleaners.py` | 2 | `INFO` |
+| `regimes/visualisation.py` | 2 | `INFO`, `WARNING` |
+| `utils/config.py` | 1 | `WARNING` (config file not found) |
+| `features/common/transforms/base.py` | 1 | `WARNING` (unimplemented staleness mode) |
+
+**Level assignment rules**:
+- Any `print("Warning: ...")` or unmet expectation → `logger.warning(...)`
+- Pipeline stage headers, data shapes, date ranges, save locations → `logger.info(...)`
+- Per-series / per-feature verbose diagnostics → `logger.debug(...)`
+- Unrecoverable failures → `logger.error(...)`
+
+**Fix** (representative examples):
+```python
+# Before (utils/config.py)
+print(f"Warning: Config file not found: {path}")
+# After
+logger.warning("Config file not found: %s", path)
+
+# Before (data/macro/pipeline.py)
+print(f"  Saved aligned data to {output_path}")
+# After
+logger.info("Saved aligned data to %s", output_path)
+```
+
+Use `%`-style formatting rather than f-strings — the message string is not constructed when the log level is suppressed, which matters in the 69-print validator.
+
+---
+
+### 2.1 Fix Staleness Detection (Value Equality Is Wrong)
+
+**Priority**: CRITICAL | **Effort**: Medium
 
 **File**: `src/regime_ml/data/macro/alignment.py:23-27`
 ```python
@@ -25,30 +491,11 @@ df["is_new_data"] = (
 
 **Fix**: Track staleness by comparing against the known publication calendar for each series, or simply mark `is_new_data=True` at the source load stage, before forward-filling, by flagging rows that existed in the original data. Do not infer freshness from value changes.
 
-**Priority**: **HIGH**
-
 ---
 
-### 1.2 CRITICAL: No Macro Revision / Release Lag Handling
+### 2.2 Enforce IS-Only Scaler Fitting
 
-**File**: `src/regime_ml/data/macro/loaders.py` (entire module), `configs/data/regime_universe.yaml`
-
-**Why dangerous**: FRED stores the *latest revised* values for all historical dates. Many macro series used here are subject to significant revisions:
-- **CFNAI**: Revised monthly with 1-month lag, then benchmark-revised annually
-- **INDPRO**: Preliminary → 1st revision → 2nd revision → benchmark revision
-- **PCEPILFE**: Released with ~1-month lag, revised for 2+ months
-
-The pipeline loads the current snapshot of FRED data and treats every value as if it were known at time `t`. This creates **lookahead bias**: the model trains on revised values that were not available at the time. For example, INDPRO for January 2020 may have been revised 3 times by March 2020, but the model assumes the final (revised) value was known on the January release date.
-
-**Fix**:
-1. Use ALFRED (Archival FRED) real-time vintage data, which stores each value as of its initial release date and subsequent revisions.
-2. At minimum, add a `release_lag_days` field per series in `regime_universe.yaml` and shift dates forward by the publication lag. E.g., monthly CFNAI released end of following month: shift by ~30 business days.
-
-**Priority**: **HIGH**
-
----
-
-### 1.3 HIGH: StandardScaler Fitted on Full Training Set Before Split
+**Priority**: HIGH | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/hmm.py:43-45`
 ```python
@@ -69,27 +516,11 @@ Additionally, `initialise_emissions` receives `df_train` but there's no enforcem
 
 **Fix**: Enforce IS-only scaler fitting. Add an assertion or wrapper that takes an explicit train/test split date and ensures the scaler never sees OOS data. Log the scaler's training period in model metadata.
 
-**Priority**: **HIGH**
-
 ---
 
-### 1.4 HIGH: `smooth_proba` Used for OOS Evaluation Leaks Information
+### 2.3 Add Maximum Staleness Limit to Forward-Fill
 
-**File**: `src/regime_ml/regimes/evaluation.py:288-289`
-```python
-smooth_is = model.smooth_proba(X_is) if X_is.shape[0] > 0 else None
-smooth_oos = model.smooth_proba(X_oos) if X_oos.shape[0] > 0 else None
-```
-
-**Why dangerous**: `smooth_proba` runs the forward-backward algorithm within each slice independently, so IS and OOS are separated. However, using smoothed probabilities for OOS evaluation is still methodologically suspect: in a real trading system, you would only have `filter_proba` (causal). Evaluating with smoothed probabilities inflates OOS coherence metrics because the backward pass uses "future" information within the OOS window itself.
-
-**Fix**: OOS evaluation should use `filter_proba` exclusively. Reserve `smooth_proba` for IS analysis/interpretation only.
-
-**Priority**: **HIGH**
-
----
-
-### 1.5 MEDIUM: Forward-Fill Before Trim Creates Silent NaN Propagation
+**Priority**: MEDIUM | **Effort**: Medium
 
 **File**: `src/regime_ml/data/macro/alignment.py:72`
 ```python
@@ -102,73 +533,76 @@ The pipeline forward-fills values, then trims to the latest series start date. B
 
 **Fix**: Add a `max_staleness_days` parameter per frequency. If a series hasn't updated in >2x its native frequency (e.g., 60 days for monthly), mark as NaN rather than forward-filling.
 
-**Priority**: **MEDIUM**
+---
+
+### 2.4 Add Publication Lag / Revision Handling
+
+**Priority**: CRITICAL | **Effort**: High
+
+**File**: `src/regime_ml/data/macro/loaders.py` (entire module), `configs/data/regime_universe.yaml`
+
+**Why dangerous**: FRED stores the *latest revised* values for all historical dates. Many macro series used here are subject to significant revisions:
+- **CFNAI**: Revised monthly with 1-month lag, then benchmark-revised annually
+- **INDPRO**: Preliminary → 1st revision → 2nd revision → benchmark revision
+- **PCEPILFE**: Released with ~1-month lag, revised for 2+ months
+
+The pipeline loads the current snapshot of FRED data and treats every value as if it were known at time `t`. This creates **lookahead bias**: the model trains on revised values that were not available at the time. For example, INDPRO for January 2020 may have been revised 3 times by March 2020, but the model assumes the final (revised) value was known on the January release date.
+
+**Fix**:
+1. Use ALFRED (Archival FRED) real-time vintage data, which stores each value as of its initial release date and subsequent revisions.
+2. At minimum, add a `release_lag_days` field per series in `regime_universe.yaml` and shift dates forward by the publication lag. E.g., monthly CFNAI released end of following month: shift by ~30 business days.
 
 ---
 
-### 1.6 MEDIUM: `days_since_update` Computed via Inefficient Loop with No Boundary Check
+## Phase 3 — HMM Model Fixes
 
-**File**: `src/regime_ml/data/macro/alignment.py:83-87`
+These affect whether the model produces valid, stable, reproducible regime sequences. Assumes Phase 2 data integrity fixes are in place.
+
+---
+
+### 3.1 Multi-Seed Initialization
+
+**Priority**: HIGH | **Effort**: Medium
+
+**File**: `src/regime_ml/regimes/hmm.py:174`
 ```python
-last_update_date = aligned[aligned['is_new_data'] == True].index
-aligned['days_since_update'] = 0
-for date in aligned.index:
-    days_since = (date - last_update_date[last_update_date <= date].max()).days
-    aligned.loc[date, 'days_since_update'] = days_since
+random_state: int = 42,
 ```
 
-**Why dangerous**: If there are no `is_new_data == True` entries before a given date (e.g., the series starts mid-way through the calendar), `last_update_date[last_update_date <= date]` is empty and `.max()` raises or returns `NaT`, causing the `.days` call to fail silently or produce incorrect values. Additionally, this is O(T * N) per series — extremely slow.
+EM for HMMs is highly sensitive to initialization. Using a single seed (42) means:
+- You have no idea if this is a local or global optimum
+- The solution may be unstable — a different seed could produce entirely different regimes
+- The KMeans initialization helps, but KMeans itself is also sensitive to initialization
 
-**Fix**: Use vectorized forward-fill of the last update date:
+**Fix**: Run N initializations (e.g., 10-20 seeds), keep the model with highest log-likelihood that passes degeneracy filters. This is standard practice. Log all runs for reproducibility.
+
+---
+
+### 3.2 Replace Ad-Hoc Covariance Regularization with Ledoit-Wolf
+
+**Priority**: MEDIUM | **Effort**: Medium
+
+**File**: `src/regime_ml/regimes/hmm.py:68-77`
 ```python
-aligned['last_update'] = aligned.index.where(aligned['is_new_data'] == True)
-aligned['last_update'] = aligned['last_update'].ffill()
-aligned['days_since_update'] = (aligned.index - aligned['last_update']).dt.days
+if len(cluster_points) < 2:
+    cov = np.eye(n_features) * 1e-6
+else:
+    cov = np.cov(cluster_points.T, ddof=1)
+    cov = (cov + cov.T) / 2
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.maximum(eigvals, 1e-6)
+    cov = eigvecs @ np.diag(eigvals) @ eigvecs.T
 ```
 
-**Priority**: **MEDIUM**
+The `1e-6` floor on eigenvalues is arbitrary. If a cluster has only 3 points in 5 dimensions, the covariance will be rank-deficient. The eigenvalue floor makes it technically positive definite but the resulting Gaussian has extremely concentrated probability mass in the degenerate directions, causing numerical issues during EM.
+
+**Fix**: Use Ledoit-Wolf shrinkage estimation for cluster covariances (already imported for evaluation in `evaluation.py`). Or set a minimum eigenvalue floor proportional to the data scale (e.g., 0.01 * median eigenvalue across all clusters).
 
 ---
 
-### 1.7 MEDIUM: Economic Redundancy in Feature Set
+### 3.3 Validate Gaussian Emission Assumption
 
-**File**: `src/regime_ml/features/macro/selection.py:36-71`
-
-The ranked feature list includes multiple correlated signals:
-- `DGS10_level_zscore_252` and `DGS2_level_zscore_252` — both nominal rate levels, highly correlated
-- `T10Y3M_level_zscore_252`, `T10Y3M_diff_21_zscore_252`, `T10Y3M_diff_5_zscore_126` — three curve features
-
-The feature validator checks 0.70 correlation, but the feature *selection* is hardcoded by economic intuition without empirical deduplication. In practice, DGS2 and DGS10 will have correlations >0.90 in many regimes.
-
-**Fix**: Add a post-selection correlation check that either drops or PCA-combines features exceeding a threshold (e.g., 0.85). Or use the correlation matrix to inform the ranked list rather than relying purely on judgment.
-
-**Priority**: **MEDIUM**
-
----
-
-### 1.8 LOW: Hardcoded Absolute Path in Loader Default
-
-**File**: `src/regime_ml/data/macro/loaders.py:12`
-```python
-source_dir: Union[str, Path] = "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro",
-```
-
-**File**: `configs/data/regime_universe.yaml:5`
-```yaml
-data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
-```
-
-**Why dangerous**: Machine-specific paths break portability. Anyone cloning this repo will get `FileNotFoundError` immediately.
-
-**Fix**: Use environment variables or a `.env`-based path resolution. The loader should raise a clear error if `DATA_DIR` is not set rather than falling back to a hardcoded path.
-
-**Priority**: **LOW** (but **HIGH** if publishing to GitHub)
-
----
-
-## 2. Regime Model Specification (HMM / Switching Models)
-
-### 2.1 HIGH: Gaussian Emission Assumption Not Validated
+**Priority**: HIGH | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/hmm.py:187-194`
 ```python
@@ -191,95 +625,11 @@ The HMM assumes Gaussian emissions. Macro z-scores may be approximately Gaussian
 2. At minimum, add QQ-plots per regime to validate Gaussian assumption
 3. Consider winsorizing at 4σ before fitting to reduce tail sensitivity
 
-**Priority**: **HIGH**
-
 ---
 
-### 2.2 HIGH: No Convergence Diagnostics
+### 3.4 Implement State Permutation / Label Alignment
 
-**File**: `src/regime_ml/regimes/hmm.py:223-226`
-```python
-self.model.fit(X, **kwargs)
-self.is_fitted = True
-return self
-```
-
-The EM algorithm may:
-- Not converge within `n_iter=1000`
-- Converge to a local optimum
-- Converge to a degenerate solution where one regime captures <1% of data
-
-None of these are detected or logged. `hmmlearn` sets `model.monitor_.converged` but this is never checked.
-
-**Fix**:
-```python
-self.model.fit(X, **kwargs)
-if not self.model.monitor_.converged:
-    warnings.warn(f"HMM did not converge after {self.n_iter} iterations")
-self.is_fitted = True
-```
-Also log `self.model.monitor_.history` (the log-likelihood trace) to detect oscillation vs. convergence.
-
-**Priority**: **HIGH**
-
----
-
-### 2.3 HIGH: Single Random Seed, No Multi-Start
-
-**File**: `src/regime_ml/regimes/hmm.py:174`
-```python
-random_state: int = 42,
-```
-
-EM for HMMs is highly sensitive to initialization. Using a single seed (42) means:
-- You have no idea if this is a local or global optimum
-- The solution may be unstable — a different seed could produce entirely different regimes
-- The KMeans initialization helps, but KMeans itself is also sensitive to initialization
-
-**Fix**: Run N initializations (e.g., 10-20 seeds), keep the model with highest log-likelihood that passes degeneracy filters. This is standard practice. Log all runs for reproducibility.
-
-**Priority**: **HIGH**
-
----
-
-### 2.4 MEDIUM: Degenerate Covariance Regularization Is Ad-Hoc
-
-**File**: `src/regime_ml/regimes/hmm.py:68-77`
-```python
-if len(cluster_points) < 2:
-    cov = np.eye(n_features) * 1e-6
-else:
-    cov = np.cov(cluster_points.T, ddof=1)
-    cov = (cov + cov.T) / 2
-    eigvals, eigvecs = np.linalg.eigh(cov)
-    eigvals = np.maximum(eigvals, 1e-6)
-    cov = eigvecs @ np.diag(eigvals) @ eigvecs.T
-```
-
-The `1e-6` floor on eigenvalues is arbitrary. If a cluster has only 3 points in 5 dimensions, the covariance will be rank-deficient. The eigenvalue floor makes it technically positive definite but the resulting Gaussian has extremely concentrated probability mass in the degenerate directions, causing numerical issues during EM.
-
-**Fix**: Use Ledoit-Wolf shrinkage estimation for cluster covariances (already imported for evaluation in `evaluation.py`). Or set a minimum eigenvalue floor proportional to the data scale (e.g., 0.01 * median eigenvalue across all clusters).
-
-**Priority**: **MEDIUM**
-
----
-
-### 2.5 MEDIUM: `filter_proba` Cholesky Decomposition Can Fail
-
-**File**: `src/regime_ml/regimes/hmm.py:295`
-```python
-L = np.linalg.cholesky(C)
-```
-
-If the covariance matrix `C` is not strictly positive definite (e.g., numerical precision issues after EM), `cholesky` will raise `LinAlgError`. There's no try/catch or jitter.
-
-**Fix**: Add a small jitter: `C = C + np.eye(d) * 1e-8` before Cholesky. Or use `scipy.linalg.cho_factor` which handles near-singular cases more gracefully.
-
-**Priority**: **MEDIUM**
-
----
-
-### 2.6 MEDIUM: No State Permutation / Label Alignment
+**Priority**: MEDIUM | **Effort**: Medium
 
 When fitting HMMs with different seeds or on different subsamples, state indices are arbitrary (state 0 in run A may correspond to state 2 in run B). There is no label alignment mechanism.
 
@@ -287,91 +637,29 @@ When fitting HMMs with different seeds or on different subsamples, state indices
 
 **Fix**: Implement Hungarian algorithm (scipy.optimize.linear_sum_assignment) for regime label alignment based on KL divergence between emission distributions.
 
-**Priority**: **MEDIUM**
+---
+
+## Phase 4 — Model Selection
+
+These affect whether the best model is actually selected. Assumes Phases 2-3 are in place.
 
 ---
 
-### 2.7 LOW: `n_iter=1000` May Be Excessive or Insufficient
+### 4.1 Add BIC/AIC
 
-**File**: `src/regime_ml/regimes/hmm.py:145`
-
-1000 EM iterations is generous. Most well-initialized HMMs converge in 50-200 iterations. However, with poor initialization or near-degenerate solutions, 1000 may still not be enough.
-
-**Fix**: Use `tol` (convergence threshold on log-likelihood improvement) instead of fixed iterations. hmmlearn supports `tol` parameter. Set `n_iter=500, tol=1e-4` and check convergence.
-
-**Priority**: **LOW**
-
----
-
-## 3. Model Selection Methodology
-
-### 3.1 HIGH: No AIC/BIC Computed Anywhere
-
-The model selection pipeline (`selection.py`) uses custom scoring but never computes AIC or BIC. For HMMs, the number of free parameters grows quadratically with `n_regimes` (transition matrix: K²-K, means: K*d, covariance: K*d*(d+1)/2 for full). Without a complexity penalty, the scoring system will systematically prefer higher-K models that overfit.
+**Priority**: HIGH | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/selection.py` (absence)
 
+The model selection pipeline (`selection.py`) uses custom scoring but never computes AIC or BIC. For HMMs, the number of free parameters grows quadratically with `n_regimes` (transition matrix: K²-K, means: K*d, covariance: K*d*(d+1)/2 for full). Without a complexity penalty, the scoring system will systematically prefer higher-K models that overfit.
+
 **Fix**: Compute BIC = -2*LL + k*log(T) where k is the number of free parameters. Use it as either a hard filter or a scoring component. This is the single most important missing metric.
 
-**Priority**: **HIGH**
-
 ---
 
-### 3.2 HIGH: OOS Weight of 5% Is Negligibly Small
+### 4.2 Replace Rank-Based Scoring with Normalized Scoring
 
-**File**: `src/regime_ml/regimes/selection.py:147-152`
-```python
-survivors["final_score"] = (
-    0.40 * survivors["macro_score"] +
-    0.30 * survivors["transition_score"] +
-    0.25 * survivors["stability_score"] +
-    0.05 * survivors["oos_macro_score"]
-)
-```
-
-OOS performance gets 5% weight. This is essentially decorative. A model that collapses OOS but scores well IS will still win. This defeats the entire purpose of having an OOS evaluation.
-
-**Fix**: Increase OOS weight to at least 20-30%. Better yet, restructure as: IS score selects candidates, OOS score selects the winner. A model that doesn't generalize OOS is worthless regardless of IS metrics.
-
-**Priority**: **HIGH**
-
----
-
-### 3.3 HIGH: Feature Selection Is Hardcoded, Not Part of Model Selection
-
-**File**: `src/regime_ml/features/macro/selection.py:19-71`
-
-`get_top_features()` returns a fixed, manually-ranked list. The `compare_hmm_models` function calls `get_top_features(n=n_features)` to select features. This means:
-- Feature selection is not cross-validated
-- The feature ranking was determined by the researcher looking at (presumably) in-sample results
-- There's no way to know if the ranking holds OOS
-
-**Fix**: Feature selection should be part of the model selection grid. Enumerate feature subsets (or at least different `n` values) as model configurations, and let the scoring function pick the best combination.
-
-**Priority**: **HIGH**
-
----
-
-### 3.4 MEDIUM: Hard Filter Thresholds Are Not Justified
-
-**File**: `src/regime_ml/regimes/selection.py:34-40`
-```python
-min_share: float = 0.03,
-max_share: float = 0.80,
-oos_min_share: float = 0.02,
-oos_max_share: float = 0.85,
-max_implied_duration: float = 3000.0,
-```
-
-These thresholds are arbitrary magic numbers. Why is 3% the minimum share? Why 3000 days for max duration? A senior quant would immediately ask for the justification.
-
-**Fix**: Either derive thresholds from economic priors (e.g., "we expect no regime shorter than 6 months ≈ 125 days, so minimum share = 125/5000 ≈ 2.5%") or use data-driven thresholds (e.g., percentiles of the candidate pool). Document the reasoning.
-
-**Priority**: **MEDIUM**
-
----
-
-### 3.5 MEDIUM: Rank-Based Scoring Loses Scale Information
+**Priority**: MEDIUM | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/selection.py:117-118`
 ```python
@@ -383,11 +671,26 @@ Rank-based scoring (percentile ranks) treats models that score 0.95 and 0.50 on 
 
 **Fix**: Use z-score normalization or min-max scaling instead of ranks for continuous metrics. Ranks are appropriate when the metric distributions are unknown, but here the metrics are well-defined.
 
-**Priority**: **MEDIUM**
+---
+
+### 4.3 Include Feature Selection in Model Selection Grid
+
+**Priority**: HIGH | **Effort**: High
+
+**File**: `src/regime_ml/features/macro/selection.py:19-71`
+
+`get_top_features()` returns a fixed, manually-ranked list. The `compare_hmm_models` function calls `get_top_features(n=n_features)` to select features. This means:
+- Feature selection is not cross-validated
+- The feature ranking was determined by the researcher looking at (presumably) in-sample results
+- There's no way to know if the ranking holds OOS
+
+**Fix**: Feature selection should be part of the model selection grid. Enumerate feature subsets (or at least different `n` values) as model configurations, and let the scoring function pick the best combination.
 
 ---
 
-### 3.6 MEDIUM: No Cross-Validation or Expanding Window
+### 4.4 Add Expanding-Window Cross-Validation
+
+**Priority**: MEDIUM | **Effort**: High
 
 The IS/OOS split is a single time-series split. This means:
 - The split date is a free parameter (data-snooping risk if tuned)
@@ -396,13 +699,17 @@ The IS/OOS split is a single time-series split. This means:
 
 **Fix**: Implement expanding-window or rolling-window cross-validation. Refit HMM on {2005-2010, 2005-2012, 2005-2014, ...} and evaluate on the subsequent 2-3 year window. Score by average OOS performance across folds.
 
-**Priority**: **MEDIUM**
+---
+
+## Phase 5 — Labels & Regime Interpretation
+
+These affect whether the output regimes are credible and correctly labelled.
 
 ---
 
-## 4. Regime Interpretation & Economic Validity
+### 5.1 Make Label Set Dynamic Based on `n_regimes`
 
-### 4.1 HIGH: Label Set Is Hardcoded to Exactly 4 Labels
+**Priority**: HIGH | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/labeling.py:82-87`
 ```python
@@ -414,24 +721,21 @@ labels = [
 ]
 ```
 
-Problems:
+**Problems**:
 1. **Exactly 4 labels for any K**: If `n_regimes=3` or `n_regimes=5`, the labeling system is broken — multiple regimes will get the same label
-2. **Typo**: "Policy-Contstrained" (missing 'r')
-3. **Trailing whitespace** in "Risk On - Expansion               " — will cause display/comparison issues
-4. **Label coefficients are arbitrary**: The weights (1.3, 1.1, -1.4, etc.) are not derived from data or economic theory. They're hand-tuned to produce "reasonable" labels.
-5. **First label says "Risk On" but the model might assign it to a risk-off cluster** — the labeling is a post-hoc interpretation that may not match the statistical structure
+2. **Label coefficients are arbitrary**: The weights (1.3, 1.1, -1.4, etc.) are not derived from data or economic theory. They're hand-tuned to produce "reasonable" labels.
+3. **First label says "Risk On" but the model might assign it to a risk-off cluster** — the labeling is a post-hoc interpretation that may not match the statistical structure
 
 **Fix**:
 - Make the label set dynamic based on `n_regimes`
 - Derive labels from data (e.g., which macro group has the largest absolute z-score defines the label)
 - Remove magic coefficients
-- Fix the typo and whitespace
-
-**Priority**: **HIGH**
 
 ---
 
-### 4.2 MEDIUM: No Validation Against Known Economic Episodes
+### 5.2 Add Validation Against Known Economic Episodes
+
+**Priority**: MEDIUM | **Effort**: Medium
 
 There's no check that regimes align with known episodes. A credible system would verify:
 - 2008 GFC → stress/recession regime
@@ -443,29 +747,17 @@ This is conspicuously absent from evaluation metrics.
 
 **Fix**: Add a `validate_against_episodes()` function that checks regime classifications against a list of known economic episodes with expected regime types. This is not a statistical test — it's a sanity check that makes the system credible.
 
-**Priority**: **MEDIUM**
+---
+
+## Phase 6 — Tests & Reproducibility
+
+These make the system verifiable and prevent regressions.
 
 ---
 
-### 4.3 MEDIUM: Regime Means Computed on Smoothed Probabilities
+### 6.1 Implement Experiment Tracking
 
-**File**: `src/regime_ml/regimes/labeling.py:40-41`
-```python
-Nk = np.maximum(gamma.sum(axis=0), 1e-12)
-mu_k = (gamma.T @ X) / Nk[:, None]
-```
-
-Using smoothed (non-causal) probabilities to compute regime means includes future information. The "mean stress level in Regime 2" is computed using data points weighted by probabilities that depend on future observations. This is fine for interpretation but misleading if you intend to use these means for online classification.
-
-**Fix**: Clearly document that labeling uses smoothed probabilities (interpretation only). For any live signal, use filter_proba-weighted means.
-
-**Priority**: **MEDIUM**
-
----
-
-## 5. Research Rigor & Reproducibility
-
-### 5.1 HIGH: No Experiment Tracking
+**Priority**: HIGH | **Effort**: Medium
 
 There is no logging of:
 - Which model configuration was tested
@@ -479,11 +771,11 @@ Every run is fire-and-forget via notebooks.
 
 **Fix**: Implement a lightweight experiment tracker (even just a JSON/CSV log file). Each model fit should log: `{timestamp, model_id, n_regimes, covariance_type, n_features, feature_names, random_seed, split_date, converged, log_likelihood, n_iter_actual, scaler_params, all_evaluation_metrics}`.
 
-**Priority**: **HIGH**
-
 ---
 
-### 5.2 HIGH: Test Suite Is Essentially Empty
+### 6.2 Build Core Test Suite
+
+**Priority**: HIGH | **Effort**: High
 
 **Files**: `tests/conftest.py` (0 lines), `tests/test_transforms.py` (0 lines), `tests/test_registry.py` (0 lines), `tests/test_transform_parser.py` (21 lines, 3 tests)
 
@@ -505,101 +797,70 @@ The entire test suite is 3 tests covering only the transform parser. Zero tests 
 6. Model selection hard filters reject degenerate models
 7. Feature names parse correctly from YAML
 
-**Priority**: **HIGH**
-
 ---
 
-### 5.3 MEDIUM: `random_state=42` Hardcoded in Multiple Places
+### 6.3 Add Pipeline Determinism Guarantee
 
-**Files**: `src/regime_ml/regimes/hmm.py:174`, `src/regime_ml/regimes/hmm.py:15`
+**Priority**: MEDIUM | **Effort**: Medium
 
-Both `HMMRegimeDetector` and `initialise_emissions` default to `random_state=42`. This is fine for reproducibility but the default should be `None` (random) with 42 used only when explicitly testing. The current setup gives a false sense of robustness — the researcher always gets the same result but doesn't know if it's stable.
-
-**Priority**: **MEDIUM**
-
----
-
-### 5.4 MEDIUM: No Pipeline Determinism Guarantee
-
-The data pipeline uses `tqdm` and `print` for progress, but there's no hash/checksum of intermediate outputs. If the FRED data is updated upstream, rerunning the pipeline produces different results with no record of what changed.
+The data pipeline uses `tqdm` for progress, but there's no hash/checksum of intermediate outputs. If the FRED data is updated upstream, rerunning the pipeline produces different results with no record of what changed.
 
 **Fix**: Hash each pipeline stage output and log it. This enables detecting when upstream data changes.
 
-**Priority**: **MEDIUM**
-
 ---
 
-## 6. Structural & Code Quality Issues
+### 6.4 Add File Handler for Pipeline Audit Trail
 
-### 6.1 MEDIUM: `get_top_features` Returns Hardcoded Feature Names
+**Priority**: LOW | **Effort**: Medium
 
-**File**: `src/regime_ml/features/macro/selection.py:19-71`
+**Files**: `src/regime_ml/data/macro/pipeline.py`, `src/regime_ml/regimes/selection.py`
 
-This function is a 70-line hardcoded list masquerading as a function. If any transform parameter changes in `regime_universe.yaml`, the feature names here silently become stale and won't match actual features.
+Pipeline runs produce output only to stdout. Background or notebook runs leave no persistent record — which series loaded, what validation warnings fired, which HMM models were filtered. This is the logging equivalent of the experiment tracking gap (6.1) and makes post-hoc debugging impossible. Requires 2.0 (print→logging) to be complete first.
 
-**Fix**: Derive the feature ranking programmatically (e.g., by ANOVA R² from a pilot HMM run), or at minimum validate that all returned feature names exist in the actual feature set.
-
-**Priority**: **MEDIUM**
-
----
-
-### 6.2 MEDIUM: `build_featuregroup_map` Loads Data from Disk on Every Call
-
-**File**: `src/regime_ml/data/macro/build_featuregroup_map.py:5-6`
+**Fix**: Add a utility function callers invoke once at the start of a pipeline run:
 ```python
-macro_cfg = load_configs()["macro_data"]["regime_universe"]
-df_group = load_dataframe(macro_cfg["raw_path"])
+import logging, datetime, pathlib
+
+def configure_pipeline_logging(log_dir: pathlib.Path) -> None:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    fh = logging.FileHandler(log_dir / f"pipeline_{ts}.log")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(
+        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    )
+    logging.getLogger("regime_ml").addHandler(fh)
 ```
 
-This function is called from `evaluation.py` and `labeling.py`, potentially multiple times per model comparison. Each call reads YAML configs and loads a parquet file from disk.
-
-**Fix**: Cache the result or pass the mapping as a parameter.
-
-**Priority**: **MEDIUM**
+Call at the top of each pipeline script or in a notebook setup cell. Each run produces a timestamped `.log` file that, combined with the experiment tracker (6.1), gives a complete reproducibility record.
 
 ---
 
-### 6.3 MEDIUM: `ChainedTransform._compute` Bypasses Staleness
+## Phase 7 — Code Quality & Portability
 
-**File**: `src/regime_ml/features/common/transforms/base.py:114-118`
-```python
-def _compute(self, series: pd.Series) -> pd.Series:
-    result = series
-    for transform in self.transforms:
-        result = transform._compute(result)
-    return result
-```
-
-`ChainedTransform._compute` calls `_compute` on each child (not `transform`), bypassing staleness handling. However, `ChainedTransform.transform` correctly calls each child's `transform` method. The risk is that if anyone calls `chain._compute(series)` directly, staleness is silently ignored.
-
-**Fix**: Override `_compute` to raise `NotImplementedError("Use transform() for ChainedTransform")` or make it call `transform()` on children.
-
-**Priority**: **MEDIUM**
+These block publishing or collaborating on the repo.
 
 ---
 
-### 6.4 LOW: `test_get_feature_names` Is Wrong
+### 7.1 Add Post-Selection Feature Correlation Check
 
-**File**: `tests/test_transform_parser.py:16-21`
-```python
-def test_get_feature_names():
-    parser = TransformParser()
-    chain = parser.parse_chain([{"diff": {"periods": 21}}, {"z_score": {"window": 252}}])
-    feature_names = parser.get_feature_names("vix", [chain])
-    assert len(feature_names) == 2
-    assert feature_names[0] == "diff_21"
-    assert feature_names[1] == "z_score_252"
-```
+**Priority**: MEDIUM | **Effort**: Medium
 
-`get_feature_names` returns one name per chain, not per transform. A chain of [Diff, ZScore] should produce 1 feature name (e.g., `vix_diff_21_zscore_252`), not 2. The assertion `len(feature_names) == 2` is wrong — this is testing that a single chain produces 2 names, which contradicts the implementation at line 134 of `transform_parser.py` where each *chain* produces one name.
+**File**: `src/regime_ml/features/macro/selection.py:36-71`
 
-**Fix**: Fix the test to `assert len(feature_names) == 1` and `assert feature_names[0] == "vix_diff_21_zscore_252"`.
+The ranked feature list includes multiple correlated signals:
+- `DGS10_level_zscore_252` and `DGS2_level_zscore_252` — both nominal rate levels, highly correlated
+- `T10Y3M_level_zscore_252`, `T10Y3M_diff_21_zscore_252`, `T10Y3M_diff_5_zscore_126` — three curve features
 
-**Priority**: **LOW**
+The feature validator checks 0.70 correlation, but the feature *selection* is hardcoded by economic intuition without empirical deduplication. In practice, DGS2 and DGS10 will have correlations >0.90 in many regimes.
+
+**Fix**: Add a post-selection correlation check that either drops or PCA-combines features exceeding a threshold (e.g., 0.85). Or use the correlation matrix to inform the ranked list rather than relying purely on judgment.
 
 ---
 
-### 6.5 LOW: Pickle Serialization for Model Persistence
+### 7.2 Replace Pickle Serialization
+
+**Priority**: LOW | **Effort**: Medium
 
 **File**: `src/regime_ml/regimes/hmm.py:458-459`
 ```python
@@ -611,11 +872,11 @@ Pickle is fragile — if you rename a class, change its module path, or upgrade 
 
 **Fix**: Serialize model parameters (transition matrix, means, covariances, scaler parameters) as numpy arrays / JSON. Reconstruct the model from parameters on load.
 
-**Priority**: **LOW**
-
 ---
 
-### 6.6 LOW: Magic Numbers Throughout
+### 7.3 Document or Parameterize Magic Numbers
+
+**Priority**: LOW | **Effort**: Medium
 
 - `alignment.py:86`: `days_since` calculation has no boundary handling
 - `evaluation.py:81`: `n_mix=20` default for mixing diagnostic
@@ -625,164 +886,39 @@ Pickle is fragile — if you rename a class, change its module path, or upgrade 
 
 Each of these should either be configurable via YAML or documented with economic justification.
 
-**Priority**: **LOW**
+---
+
+### 7.4 Add CI/CD
+
+**Priority**: MEDIUM | **Effort**: Small
+
+**Files**: `.github/workflows/` (absent)
+
+No GitHub Actions exist. There are no automated checks on push or PR — tests, lint, and formatting are never verified without manual effort. Any broken commit goes undetected until someone runs `pytest` locally.
+
+**Fix**: Add `.github/workflows/ci.yml` running on push and PR:
+```yaml
+- run: uv run pytest tests/ -v
+- run: uv run ruff check src/ tests/
+- run: uv run black --check src/ tests/
+```
+
+**Note**: This is only viable once the test suite is non-empty (Step 6.2).
 
 ---
 
-## 7. Pre-Deployment Quant Hardening Checklist
+### 7.5 Remove `# type: ignore` Comments
 
-### Before Conditioning Equity ML Models on Regimes:
-1. **Fix lookahead bias in macro data** — use vintage data or apply publication lags (Section 1.2)
-2. **Fix staleness detection** — use actual observation flags, not value-change detection (Section 1.1)
-3. **Ensure scaler is IS-only** — verify no OOS leakage (Section 1.3)
-4. **Add multi-seed initialization** — current results may be a local optimum (Section 2.3)
-5. **Add BIC/AIC** — without complexity penalty, model selection is biased toward overfitting (Section 3.1)
-6. **Increase OOS weight** — 5% is negligible (Section 3.2)
-7. **Use filter_proba for OOS evaluation** — smooth_proba leaks within-window information (Section 1.4)
-8. **Validate Gaussian assumption** — add QQ diagnostics, consider t-emissions (Section 2.1)
-9. **Check convergence** — `model.monitor_.converged` (Section 2.2)
+**Priority**: LOW | **Effort**: Medium
 
-### Before Publishing to GitHub:
-1. **Remove hardcoded paths** — `/Users/alecmitchell-thomson/...` appears in loaders.py and YAML (Section 1.8)
-2. **Fix empty test files** — conftest.py, test_transforms.py, test_registry.py are all 0 bytes (Section 5.2)
-3. **Fix the broken test** — `test_get_feature_names` asserts wrong values (Section 6.4)
-4. **Fix typo** — "Policy-Contstrained" (Section 4.1)
-5. **Remove `.env` from repo** — it's listed in the project and likely contains FRED API keys
-6. **Add CI/CD** — no GitHub Actions for tests/lint
+**Files**: 17+ occurrences across `src/regime_ml/`
 
-### Before Showing in an Interview:
-1. A senior quant would immediately ask: **"How do you handle FRED revisions?"** — you have no answer right now
-2. A senior quant would ask: **"Did you test multiple initializations?"** — single seed is a red flag
-3. A senior quant would ask: **"Where is your BIC?"** — fundamental model selection tool, completely absent
-4. A senior quant would ask: **"What's your OOS protocol?"** — a single split with 5% weight won't impress
-5. The empty test suite signals this hasn't been validated beyond notebooks
-6. The hardcoded feature ranking looks like the output was reverse-engineered to match expectations
+`# type: ignore` suppresses mypy errors silently. 17+ occurrences means type issues are being papered over rather than fixed. This is a maintenance risk — a type error that causes a runtime bug will never surface in static analysis.
 
-### What Makes This Look Like a Student Project:
-- Empty test files committed to git
-- `print()` statements instead of `logging`
-- Hardcoded personal paths in production code
-- No experiment tracking — results live only in notebook memory
-- Labels with trailing whitespace and typos
-- Magic numbers without justification
-- Pickle serialization
-- `# type: ignore` comments scattered throughout (17+ occurrences)
+**Fix**: For each occurrence, either:
+1. Fix the underlying type issue (correct annotation, add a cast, or refine the type)
+2. Replace with a narrower suppression: `# type: ignore[attr-defined]` with a comment explaining why
+3. As a last resort, leave `# type: ignore` only where a third-party library (e.g., hmmlearn) has incomplete stubs — and document this explicitly
 
-### What Would Get This Rejected:
-- **No revision handling** — any quant PM with FRED experience will flag this immediately
-- **Single-seed HMM** — standard practice is multi-start
-- **No BIC** — the most basic model selection criterion for mixture models
-- **Gaussian assumption without validation** — especially with VIX in the feature set
-- **5% OOS weight** — signals the developer doesn't actually trust their OOS evaluation
+Running `mypy src/regime_ml/ --ignore-missing-imports` first will show which are real issues vs. stub gaps.
 
----
-
-**Summary**: The architecture is well-structured and the staleness-aware transform framework is a genuinely good idea that most ML pipelines miss. The HMM implementation (especially the hand-rolled causal filter) shows technical competence. However, the system has several critical methodological gaps (revision handling, multi-seed, BIC, OOS protocol) that would be caught in any professional review. Fix these before building downstream models — regime conditioning is only as reliable as the regime labels, and right now those labels are not defensible.
-
----
-
-## 8. Implementation Order
-
-Ordered to unblock downstream work as fast as possible. Each phase can be started once the previous is done. Within a phase, items marked **[QUICK]** are low-effort and should be done first.
-
----
-
-### Phase A — Data Integrity (fix before touching any model)
-
-These create lookahead bias or corrupt the feature values that everything downstream depends on.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| A1 | Fix staleness detection — use pre-fill row flags, not value-change comparison | 1.1 | Medium |
-| A2 | Add `release_lag_days` per series in `regime_universe.yaml`; shift series dates forward before use | 1.2 | High |
-| A3 | Enforce IS-only scaler fitting; assert scaler never sees OOS dates | 1.3 | Medium |
-| A4 | Replace `smooth_proba` with `filter_proba` for all OOS evaluation | 1.4 | **[QUICK]** |
-| A5 | Add `max_staleness_days` per frequency; mark NaN instead of indefinite ffill | 1.5 | Medium |
-| A6 | Vectorize `days_since_update` using ffill of last-update date index | 1.6 | **[QUICK]** |
-
----
-
-### Phase B — HMM Model Fixes
-
-These affect whether the model produces valid, stable, reproducible regime sequences.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| B1 | Check `model.monitor_.converged` after fit; warn and log LL trace | 2.2 | **[QUICK]** |
-| B2 | Add Cholesky jitter (`C + 1e-8 * I`) in `filter_proba` | 2.5 | **[QUICK]** |
-| B3 | Run N initializations (10–20 seeds); keep highest-LL model passing degeneracy filters | 2.3 | Medium |
-| B4 | Replace ad-hoc `1e-6` eigenvalue floor with Ledoit-Wolf shrinkage for cluster covariances | 2.4 | Medium |
-| B5 | Add QQ-plots per regime; evaluate t-emission alternative for VIX/NFCI | 2.1 | Medium |
-| B6 | Implement Hungarian-algorithm label alignment for cross-model/cross-seed comparison | 2.6 | Medium |
-| B7 | Replace `n_iter=1000` with `n_iter=500, tol=1e-4`; rely on convergence check from B1 | 2.7 | **[QUICK]** |
-
----
-
-### Phase C — Model Selection
-
-These affect whether the best model is actually selected.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| C1 | Increase OOS weight from 5% to ≥25% in `final_score` formula | 3.2 | **[QUICK]** |
-| C2 | Compute BIC = -2·LL + k·log(T) for all candidates; add as hard filter or scoring component | 3.1 | Medium |
-| C3 | Add documented economic justification for hard-filter thresholds (min_share, max_implied_duration, etc.) | 3.4 | **[QUICK]** |
-| C4 | Replace rank-based scoring with z-score or min-max normalization for continuous metrics | 3.5 | Medium |
-| C5 | Add `n_features` as a grid dimension in `compare_hmm_models`; cross-validate feature count selection | 3.3 | High |
-| C6 | Implement expanding-window or rolling-window cross-validation; score by average OOS across folds | 3.6 | High |
-
----
-
-### Phase D — Labels & Regime Interpretation
-
-These affect whether the output regimes are credible and correctly labelled.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| D1 | Fix typo ("Contstrained") and trailing whitespace in label strings | 4.1 | **[QUICK]** |
-| D2 | Make label set dynamic based on `n_regimes`; handle K≠4 cases | 4.1 | Medium |
-| D3 | Document that `labeling.py` uses smoothed probabilities (interpretation only, not for live signals) | 4.3 | **[QUICK]** |
-| D4 | Add `validate_against_episodes()` — check 2008 GFC, 2020 COVID, 2022 hike cycle, 2003–2007 expansion | 4.2 | Medium |
-
----
-
-### Phase E — Tests & Reproducibility
-
-These make the system verifiable and prevent regressions.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| E1 | Fix broken test: `test_get_feature_names` should assert `len==1` and correct name format | 6.4 | **[QUICK]** |
-| E2 | Implement lightweight experiment logger: JSON record per fit with timestamp, config, seed, LL, metrics | 5.1 | Medium |
-| E3 | Add core test suite: staleness flags, ffill boundaries, `filter_proba` causality, metric bounds, hard-filter rejection | 5.2 | High |
-| E4 | Change `random_state` defaults to `None`; require explicit seed when testing | 5.3 | **[QUICK]** |
-| E5 | Hash pipeline stage outputs; log hash with each run to detect upstream FRED data changes | 5.4 | Medium |
-
----
-
-### Phase F — Code Quality & Portability
-
-These block publishing or collaborating on the repo.
-
-| # | Issue | Section | Effort |
-|---|-------|---------|--------|
-| F1 | Replace hardcoded `/Users/alecmitchell-thomson/...` paths with env-var resolution; raise clear error if unset | 1.8 | **[QUICK]** |
-| F2 | Validate that all names returned by `get_top_features()` exist in the actual feature set at runtime | 6.1 | **[QUICK]** |
-| F3 | Cache `build_featuregroup_map()` result (lru_cache or pass mapping as parameter) | 6.2 | **[QUICK]** |
-| F4 | Override `ChainedTransform._compute` to raise `NotImplementedError`; enforce use of `transform()` | 6.3 | **[QUICK]** |
-| F5 | Add post-selection correlation check in feature pipeline; drop or PCA-combine features above 0.85 threshold | 1.7 | Medium |
-| F6 | Replace pickle serialization with parameter-level JSON + numpy for model persistence | 6.5 | Medium |
-| F7 | Document or parameterize magic numbers (`n_mix=20`, `slack=0.75`, persistence range `[20,200]`, label coefficients) | 6.6 | Medium |
-
----
-
-### Recommended Sprint Order
-
-For immediate interview/deployment readiness, attack in this sequence:
-
-1. **Day 1 — All QUICK items**: A4, A6, B1, B2, B7, C1, C3, D1, D3, E1, E4, F1, F2, F3, F4 — these are low-effort, high-signal fixes that eliminate the most embarrassing issues.
-2. **Week 1 — Phase A remainder**: A1, A3, A5, then A2 (ALFRED/lag handling is the hardest and most important).
-3. **Week 2 — Phase B**: B3 (multi-seed) + B4 + B5 (QQ diagnostics).
-4. **Week 2 — Phase C**: C1 already done; C2 (BIC), C4 (scoring), C3 documentation.
-5. **Week 3 — Phase D + E**: Labels (D2, D4), then tests (E2, E3).
-6. **Week 4 — Phase F + C5/C6**: Portability cleanup, then expanding-window CV if time allows.
