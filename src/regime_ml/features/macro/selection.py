@@ -1,8 +1,6 @@
 # src/regime_ml/features/selection.py
 
-import pandas as pd
 from typing import List, Optional
-from regime_ml.data.common.loaders import load_dataframe
 
 def get_feature_groups() -> dict:
     """Return features grouped by category."""
@@ -16,18 +14,25 @@ def get_feature_groups() -> dict:
         'labor': ['ICSA_movingaverage_4_zscore_50', 'ICSA_ma_4_pctchange_13_zscore_50']
     }
 
-def get_top_features(n: int = 5) -> list[str]:
+def get_top_features(
+    n: int = 5,
+    available_features: Optional[List[str]] = None,
+) -> list[str]:
     """
     Return the top N most important features for regime detection.
-    
+
     Features are ranked by regime discriminative power based on:
     - Economic theory (recession signals, stress indicators)
     - Empirical importance in regime literature
     - Balance of levels (states) vs momentum (transitions)
-    
+
     Args:
         n: Number of top features to return (default: 5)
-        
+        available_features: If provided, validates that the returned names all exist
+            in this list.  Raises ValueError for any name that is missing, which
+            catches silent staleness when transform parameters change in
+            regime_universe.yaml without updating this ranking.
+
     Returns:
         List of feature names, ordered by importance
     """
@@ -70,5 +75,17 @@ def get_top_features(n: int = 5) -> list[str]:
         'INDPRO_pctchange_3_zscore_36',             # 25. 3mo production - overlaps with YoY and CFNAI
     ]
     
-    # Return top N features
-    return ranked_features[:n]
+    top_n = ranked_features[:n]
+
+    if available_features is not None:
+        available_set = set(available_features)
+        missing = [f for f in top_n if f not in available_set]
+        if missing:
+            raise ValueError(
+                f"get_top_features() returned {len(missing)} name(s) not present in the "
+                f"computed feature set: {missing}. "
+                "Update the ranked_features list in selection.py to match the transform "
+                "parameters declared in regime_universe.yaml."
+            )
+
+    return top_n

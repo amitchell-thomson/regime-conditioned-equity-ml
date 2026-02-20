@@ -50,18 +50,18 @@ The architecture is well-structured and the staleness-aware transform framework 
 - [ ] Ensure scaler is IS-only — verify no OOS leakage (Step 2.2)
 - [ ] Add multi-seed initialization — current results may be a local optimum (Step 3.1)
 - [ ] Add BIC/AIC — without complexity penalty, model selection is biased toward overfitting (Step 4.1)
-- [ ] Increase OOS weight — 5% is negligible (Step 1.2a)
-- [ ] Use filter_proba for OOS evaluation — smooth_proba leaks within-window information (Step 1.4)
+- [x] Increase OOS weight — raised from 5% → 25% (Step 1.2a)
+- [x] Use filter_proba for OOS evaluation — smooth_oos replaced with filt_oos in evaluation.py (Step 1.4)
 - [ ] Validate Gaussian assumption — add QQ diagnostics, consider t-emissions (Step 3.3)
-- [ ] Check convergence — `model.monitor_.converged` (Step 1.1a)
+- [x] Check convergence — LL-delta check added; logger.warning fires when HMM hits iteration limit without converging (Step 1.1a)
 
 ### Pre-GitHub Checklist
 
-- [ ] Remove hardcoded paths — `/Users/alecmitchell-thomson/...` appears in loaders.py and YAML (Step 1.7b)
-- [ ] Fix empty test files — conftest.py, test_transforms.py, test_registry.py are all 0 bytes (Step 6.2)
-- [ ] Fix the broken test — `test_get_feature_names` asserts wrong values (Step 1.6)
+- [x] Remove hardcoded paths — MACRO_DATA_PATH env var; loaders.py raises ValueError; .env.example added (Step 1.7b)
+- [ ] Fix empty test files — conftest.py now has caplog fixture; test_transforms.py and test_registry.py still 0 bytes (Step 6.2)
+- [x] Fix the broken test — `test_get_feature_names` was already asserting correct values (Step 1.6)
 - [x] Fix typo — "Policy-Contstrained" (Step 1.3a)
-- [ ] Replace `print()` with `logging` — 180 print calls across 9 files; add NullHandler to package root (Steps 1.9a, 2.0)
+- [ ] Replace `print()` with `logging` — NullHandler + package logger added (Step 1.9a ✓); 180 print→logging migration pending (Step 2.0 ✗)
 - [ ] Remove `.env` from repo — it's listed in the project and likely contains FRED API keys
 - [ ] Add CI/CD — no GitHub Actions for tests/lint (Step 7.4)
 - [ ] Resolve `# type: ignore` comments — 17+ occurrences silently suppress type errors (Step 7.5)
@@ -84,6 +84,30 @@ The architecture is well-structured and the staleness-aware transform framework 
 ## Phase 1 — Quick Wins
 
 Low-effort fixes that can be completed in a single focused session. Grouped by file to minimise context switching.
+
+### Phase 1 — Implementation Status (2026-02-20)
+
+| Step | Item | Status |
+|------|------|--------|
+| 1.1a | Convergence diagnostics (LL-delta warning) | ✅ Done |
+| 1.1b | Cholesky jitter in `initialise_emissions` | ✅ Done |
+| 1.1c | `n_iter=500, tol=1e-4` defaults | ✅ Done |
+| 1.2a | OOS weight 5% → 25% | ✅ Done |
+| 1.2b | Document hard filter thresholds (economic rationale comments) | ✅ Done |
+| 1.3a | Fix "Policy-Contstrained" typo | ✅ Pre-existing |
+| 1.3b | Document smoothed probabilities in `label_regimes()` docstring | ✅ Done |
+| 1.4 | Use `filter_proba` for OOS evaluation | ✅ Done |
+| 1.5 | Vectorize `days_since_update` | ✅ Done |
+| 1.6 | Fix broken `test_get_feature_names` | ✅ Pre-existing |
+| 1.7a | `random_state` defaults to `None` | ✅ Done |
+| 1.7b | Replace hardcoded paths with `MACRO_DATA_PATH` env var | ✅ Done |
+| 1.8a | Validate `get_top_features()` names at runtime | ✅ Done |
+| 1.8b | Cache / replace `build_featuregroup_map` parquet I/O | ✅ Done (YAML lookup) |
+| 1.8c | `ChainedTransform._compute()` guard + weighted staleness guard | ✅ Done |
+| 1.9a | NullHandler at package root | ✅ Done |
+| 1.9b | pytest `log_cli` config + hmmlearn/matplotlib silencing | ✅ Done |
+
+**Phase 1 complete. All 17 items resolved. Proceed to Phase 2.**
 
 ---
 
