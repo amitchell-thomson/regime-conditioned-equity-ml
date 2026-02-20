@@ -60,7 +60,7 @@ The architecture is well-structured and the staleness-aware transform framework 
 - [ ] Remove hardcoded paths — `/Users/alecmitchell-thomson/...` appears in loaders.py and YAML (Step 1.7b)
 - [ ] Fix empty test files — conftest.py, test_transforms.py, test_registry.py are all 0 bytes (Step 6.2)
 - [ ] Fix the broken test — `test_get_feature_names` asserts wrong values (Step 1.6)
-- [ ] Fix typo — "Policy-Contstrained" (Step 1.3a)
+- [x] Fix typo — "Policy-Contstrained" (Step 1.3a)
 - [ ] Replace `print()` with `logging` — 180 print calls across 9 files; add NullHandler to package root (Steps 1.9a, 2.0)
 - [ ] Remove `.env` from repo — it's listed in the project and likely contains FRED API keys
 - [ ] Add CI/CD — no GitHub Actions for tests/lint (Step 7.4)

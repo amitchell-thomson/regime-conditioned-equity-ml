@@ -17,6 +17,5 @@ def test_get_feature_names():
     parser = TransformParser()
     chain = parser.parse_chain([{"diff": {"periods": 21}}, {"z_score": {"window": 252}}])
     feature_names = parser.get_feature_names("vix", [chain])
-    assert len(feature_names) == 2
-    assert feature_names[0] == "diff_21"
-    assert feature_names[1] == "z_score_252"
+    assert len(feature_names) == 1
+    assert feature_names[0] == "vix_diff_21_zscore_252"
