@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple
 
 def _get(d: Dict[str, Any], path: str, default=np.nan):
     """Safe nested getter: path like 'macro_coherence.maha_median'."""
@@ -94,13 +94,21 @@ def select_best_hmm_model(
             rej.append({"model_id": df.loc[i, "model_id"], "reason": reason})
         keep_mask &= ~mask
 
+    # A non-stationary transition matrix has no meaningful long-run distribution;
+    # regime labels have no stable economic interpretation.
     reject(~df["tv_valid"], "transition_matrix: stationary invalid (tv_distance_valid=False)")
+    # A regime with <3% share is economically inert — too rare to build a strategy on.
+    # A regime with >80% share dominates the sample, implying near-trivial segmentation.
     reject(df["min_share"] < min_share, f"dead regime (min_share < {min_share})")
     reject(df["max_share"] > max_share, f"collapsed regime (max_share > {max_share})")
+    # Implied duration >3000 days (~12 years) means the self-transition probability is
+    # nearly 1 — the model cannot escape the regime; it is effectively absorbing.
     reject(df["max_implied_duration"] > max_implied_duration, f"absorbing regime (max_implied_duration > {max_implied_duration})")
+    # Mahalanobis distance below the 10th percentile means at least two regimes are
+    # indistinguishable in macro feature space — a degenerate, redundant solution.
     reject(df["maha_min"] < maha_thresh, f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)")
 
-    # OOS robustness (only apply if OOS metrics exist)
+    # OOS robustness: dead/collapsed regimes OOS signal overfitting to the training period.
     if df["oos_min_share"].notna().any(): # type: ignore
         reject(df["oos_min_share"] < oos_min_share, f"OOS dead regime (oos_min_share < {oos_min_share})")
     if df["oos_max_share"].notna().any(): # type: ignore
@@ -145,11 +153,14 @@ def select_best_hmm_model(
     survivors["oos_macro_score"] = oos_macro
 
     survivors["final_score"] = (
-        0.40 * survivors["macro_score"] +
-        0.30 * survivors["transition_score"] +
-        0.25 * survivors["stability_score"] +
-        0.05 * survivors["oos_macro_score"]
+        0.30 * survivors["macro_score"] +
+        0.25 * survivors["transition_score"] +
+        0.20 * survivors["stability_score"] +
+        0.25 * survivors["oos_macro_score"]
     )
+    # Weights: macro=0.30, transition=0.25, stability=0.20, oos_macro=0.25 → sum=1.00
+    # OOS weight raised from 5% to 25%: OOS coherence is a primary selection signal,
+    # not a decoration. IS-only winners that collapse OOS are excluded by design.
 
     leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True) # type: ignore
     best_model_id = str(leaderboard.loc[0, "model_id"])

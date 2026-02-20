@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional
 import pandas as pd
-import numpy as np
 
 class BaseTransform(ABC):
     """
@@ -62,7 +61,7 @@ class BaseTransform(ABC):
         """
         if staleness_mode == "strict" and is_new_data is not None:
             # compute on actual data points
-            actual_data = series[is_new_data == True]
+            actual_data = series[is_new_data.astype(bool)]
             result = self._compute(actual_data) # type: ignore
 
             # forward-fill to original index
@@ -73,8 +72,11 @@ class BaseTransform(ABC):
             result = self._compute(series)
 
         elif staleness_mode == "weighted":
-            print("Have not implemented weighted staleness mode yet")
-            result = self._compute(series)
+            raise NotImplementedError(
+                "staleness_mode='weighted' is not implemented. "
+                "Use 'strict' (compute on real data only, then forward-fill) "
+                "or 'ignore' (compute on all data including forward-fills)."
+            )
 
         else:
             raise ValueError(f"Invalid staleness mode: {staleness_mode}")
@@ -112,10 +114,14 @@ class ChainedTransform(BaseTransform):
             raise ValueError("ChainedTransform must have at least one transform")
     
     def _compute(self, series: pd.Series) -> pd.Series:
-        result = series
-        for transform in self.transforms:
-            result = transform._compute(result)
-        return result
+        # Disabled: calling _compute() directly on a ChainedTransform bypasses the
+        # staleness handling in each constituent transform's .transform() method.
+        # Use ChainedTransform.transform(series, is_new_data, staleness_mode) instead.
+        raise NotImplementedError(
+            "ChainedTransform._compute() is disabled. "
+            "Use .transform(series, is_new_data, staleness_mode) to preserve "
+            "staleness-aware computation in each constituent transform."
+        )
     
     def transform(
         self,

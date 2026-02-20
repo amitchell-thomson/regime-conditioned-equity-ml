@@ -134,12 +134,12 @@ def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
 
 def evaluate_macro_coherence(
     X: np.ndarray,
-    smooth_proba: np.ndarray,
+    proba: np.ndarray,
     feature_names: list[str] | None = None,
     featuregroup_map: dict[str, str] | None = None,
 ) -> Dict[str, Any]:
     """
-    Macro coherence metrics using smoothed regime probabilities.
+    Macro coherence metrics using regime probabilities.
 
     1. Mahalanobis distance between regime means and variance explained by regimes:
         - are regime "macro signatures" well separated in feature space?
@@ -148,19 +148,22 @@ def evaluate_macro_coherence(
     2. Anova style variance explained by regimes:
         - how much of the feature variance is explained by regimes?
         - to do this we compute explained R^2 per feature, then average
-    
+
+    Args:
+        proba: (T, K) regime probability matrix. Pass filter_proba() output for causal
+               evaluation (OOS). Smoothed probabilities are acceptable for IS interpretation.
     """
     X = np.asarray(X, float)
-    smooth_proba = np.asarray(smooth_proba, float)
+    proba = np.asarray(proba, float)
 
     T, d = X.shape
-    T2, K = smooth_proba.shape
-    assert T == T2, "X and smooth_proba must align on time dimension"
+    T2, K = proba.shape
+    assert T == T2, "X and proba must align on time dimension"
 
     # --- Weighted regime means (K,d)
-    Nk = smooth_proba.sum(axis=0)                       # (K,)
+    Nk = proba.sum(axis=0)                       # (K,)
     Nk = np.maximum(Nk, 1e-12)
-    mu_k = (smooth_proba.T @ X) / Nk[:, None]           # (K,d)
+    mu_k = (proba.T @ X) / Nk[:, None]           # (K,d)
 
     # --- (A) Mahalanobis separation between regime means
     # Use shrinkage covariance for stability; get precision (inverse covariance)
@@ -286,7 +289,6 @@ def compare_hmm_models(
         regimes_oos = model.predict(X_oos) if X_oos.shape[0] > 0 else np.array([], dtype=int)
 
         smooth_is = model.smooth_proba(X_is) if X_is.shape[0] > 0 else None
-        smooth_oos = model.smooth_proba(X_oos) if X_oos.shape[0] > 0 else None
 
         filt_is = model.filter_proba(X_is) if X_is.shape[0] > 0 else None
         filt_oos = model.filter_proba(X_oos) if X_oos.shape[0] > 0 else None
@@ -308,8 +310,11 @@ def compare_hmm_models(
         entropy_balance_is = evaluate_entropy_balance(filt_is) if filt_is is not None else {}
         entropy_balance_oos = evaluate_entropy_balance(filt_oos) if filt_oos is not None else {}
 
+        # IS: smoothed probabilities are acceptable for interpretation (not a trading signal).
         macro_coh_is = evaluate_macro_coherence(X_is, smooth_is, selected_features, featuregroup_map) if smooth_is is not None else {}
-        macro_coh_oos = evaluate_macro_coherence(X_oos, smooth_oos, selected_features, featuregroup_map) if smooth_oos is not None else {}
+        # OOS: must use filter_proba (causal). smooth_proba runs forward-backward within the
+        # OOS window, giving each time-step t access to t+1…T_oos — look-ahead bias.
+        macro_coh_oos = evaluate_macro_coherence(X_oos, filt_oos, selected_features, featuregroup_map) if filt_oos is not None else {}
 
         results[model_id] = {
             "n_obs_full": int(X_full_scaled.shape[0]),

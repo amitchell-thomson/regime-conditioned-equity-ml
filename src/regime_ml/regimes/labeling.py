@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from typing import Dict, Any
 from regime_ml.data.macro import build_featuregroup_map
 # uses your build_featuregroup_map(all_feature_names)
@@ -14,10 +13,8 @@ def label_regimes(
 
     Args:
         X: (T, d) feature matrix (ideally standardized)
-        proba: (T, K) regime probabilities (smoothed preferred for interpretation)
+        proba: (T, K) regime probabilities
         feature_names: list of length d, names corresponding to columns in X
-        featuregroup_map: {feature_name: group_name} e.g. output of build_featuregroup_map(feature_names)
-        label_set: which deterministic label schema to use
 
     Returns:
         Dict containing:
@@ -25,6 +22,13 @@ def label_regimes(
           - state_group_scores: {k: {group: score}}
           - state_feature_means: (K,d) list form for JSON friendliness
           - group_ordering: helpful ranks used in labeling
+
+    Notes:
+        Pass smoothed probabilities (from model.smooth_proba()) for best label
+        quality — smoothing produces cleaner regime separation that aids interpretation.
+        These labels are for analysis only. NEVER use labels derived from smooth_proba()
+        in trading signals. For live regime assignment use model.filter_proba(), which
+        is causal (uses only past data at each time step).
     """
     featuregroup_map = build_featuregroup_map(feature_names)
 

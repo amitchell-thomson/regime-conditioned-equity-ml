@@ -1,19 +1,22 @@
+import logging
+import pickle
+from pathlib import Path
+from typing import Optional, Tuple, Dict
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import pickle
-import warnings
 from hmmlearn import hmm
-from typing import Optional, Tuple, Dict
-from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 from .base import BaseRegimeDetector
+
+logger = logging.getLogger(__name__)
 
 def initialise_emissions(
     df_train: pd.DataFrame,
     n_clusters: int,
-    random_state: int = 42,
+    random_state: Optional[int] = None,
     covariance_type: str = 'full',
     scale_features: bool = True
 ) -> Tuple[np.ndarray, np.ndarray, StandardScaler]:
@@ -76,6 +79,9 @@ def initialise_emissions(
             eigvals, eigvecs = np.linalg.eigh(cov)
             eigvals = np.maximum(eigvals, 1e-6)  # Ensure positive eigenvalues
             cov = eigvecs @ np.diag(eigvals) @ eigvecs.T
+            # Cholesky jitter: guarantee numerical positive-definiteness before
+            # hmmlearn's internal Cholesky decomposition during EM.
+            cov += 1e-6 * np.eye(n_features)
         
         # Handle NaN/Inf values
         cov = np.nan_to_num(cov, nan=0.0, posinf=1e6, neginf=-1e6)
@@ -145,7 +151,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         covariance_type: str = 'full',
         n_iter: int = 500,
         tol: float = 1e-4,
-        random_state: int = 42,
+        random_state: Optional[int] = None,
         startprob: Optional[np.ndarray] = None,
         transmat: Optional[np.ndarray] = None,
         means: Optional[np.ndarray] = None,
@@ -163,7 +169,9 @@ class HMMRegimeDetector(BaseRegimeDetector):
             covariance_type: 'full', 'diag', 'spherical', 'tied'
             n_iter: Maximum EM iterations
             tol: Convergence tolerance
-            random_state: Random seed for reproducibility
+            random_state: Random seed. None uses an unpredictable seed — useful for
+                detecting label-switching instability across runs. Set a fixed integer
+                for reproducible research.
             startprob: Optional initial state probabilities (n_regimes,)
             transmat: Optional transition matrix (n_regimes, n_regimes)
             means: Optional emission means (n_regimes, n_features)
@@ -225,8 +233,26 @@ class HMMRegimeDetector(BaseRegimeDetector):
 
         # Fit HMM
         self.model.fit(X, **kwargs)
-        if not self.model.monitor_.converged:
-            warnings.warn(f"HMM fit did not converge after {self.n_iter} iterations.")
+        monitor = self.model.monitor_
+        # hmmlearn 0.3.x sets converged=True when iter==n_iter (hit limit) OR when
+        # LL delta < tol. We only want to warn when the LL delta criterion was NOT met,
+        # i.e. the model stopped because it ran out of iterations, not because it converged.
+        ll_converged = (
+            len(monitor.history) >= 2
+            and monitor.history[-1] - monitor.history[-2] < monitor.tol
+        )
+        if not ll_converged:
+            delta = (
+                monitor.history[-1] - monitor.history[-2]
+                if len(monitor.history) >= 2
+                else float("nan")
+            )
+            logger.warning(
+                "HMM did not converge after %d iterations "
+                "(final LL delta: %.6f, tol=%.6f). "
+                "Consider increasing n_iter or relaxing tol in regime_config.yaml.",
+                self.n_iter, delta, self.tol,
+            )
         self.is_fitted = True
         return self
     

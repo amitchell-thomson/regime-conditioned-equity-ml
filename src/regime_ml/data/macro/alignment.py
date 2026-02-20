@@ -78,13 +78,12 @@ def align_to_calendar(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFr
         
         # is_new_data stays as-is (True where data updated, NaN elsewhere)
         # This is the key: you can see which days had real updates!
-        
-        # Add days since last update
-        last_update_date = aligned[aligned['is_new_data'] == True].index
-        aligned['days_since_update'] = 0
-        for date in aligned.index:
-            days_since = (date - last_update_date[last_update_date <= date].max()).days # type: ignore
-            aligned.loc[date, 'days_since_update'] = days_since
+
+        # Add days since last update (vectorized: O(T) instead of O(T²))
+        # Each run of forward-filled rows forms a group; cumcount gives elapsed days.
+        is_new = aligned['is_new_data'].fillna(False)
+        group_id = is_new.cumsum()  # increments at every real observation
+        aligned['days_since_update'] = aligned.groupby(group_id).cumcount()
         
         aligned_series.append(aligned)
     

@@ -9,7 +9,7 @@ from regime_ml.data.common import get_project_root
 
 
 def load_raw_data(
-    source_dir: Union[str, Path] = "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro",
+    source_dir: Union[str, Path, None] = None,
     output_path: Union[str, Path] = "data/raw/macro_raw.parquet",
     relative_output: bool = True,
     verbose: bool = True
@@ -53,8 +53,15 @@ def load_raw_data(
         ...     output_path="data/processed/macro.parquet"
         ... )
     """
+    if source_dir is None:
+        raise ValueError(
+            "source_dir is required. Set the MACRO_DATA_PATH environment variable "
+            "(see .env.example) or pass source_dir explicitly. The pipeline reads "
+            "this from configs/data/regime_universe.yaml via load_configs()."
+        )
+
     source_dir = Path(source_dir)
-    
+
     # Check if source directory exists
     if not source_dir.exists():
         raise FileNotFoundError(f"Source directory not found: {source_dir}")

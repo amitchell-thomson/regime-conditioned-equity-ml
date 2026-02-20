@@ -2,6 +2,7 @@ regime_universe:
   frequency: 
   calendar: business
 
+  # Override with MACRO_DATA_PATH environment variable (set in .env — see .env.example).
   data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
   raw_path: "data/raw/macro_raw.parquet"
   processed_path: "data/processed/macro_processed.parquet"
@@ -18,6 +19,7 @@ regime_universe:
     # ============================
     vix:
       id: VIXCLS
+      category: stress
       frequency: daily
       name: "CBOE Volatility Index"
       description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
@@ -29,6 +31,7 @@ regime_universe:
 
     nfci:
       id: NFCI
+      category: liquidity
       frequency: weekly
       name: "Chicago Fed National Financial Conditions Index"
       description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
@@ -42,6 +45,7 @@ regime_universe:
     # ============================
     ust2y:
       id: DGS2
+      category: rates
       frequency: daily
       name: "2Y Treasury yield"
       description: "Near-term policy expectations; front-end rates sensitivity."
@@ -50,6 +54,7 @@ regime_universe:
 
     ust10y:
       id: DGS10
+      category: rates
       frequency: daily
       name: "10Y Treasury yield"
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
@@ -60,6 +65,7 @@ regime_universe:
 
     yc_10_3m:
       id: T10Y3M
+      category: rates
       frequency: daily
       name: "10Y-3M yield curve slope"
       description: "Cycle/recession indicator; robust curve-slope measure."
@@ -73,6 +79,7 @@ regime_universe:
     # ============================
     pce_core:
       id: PCEPILFE
+      category: inflation
       frequency: monthly
       name: "Core PCE price index"
       transforms:
@@ -85,6 +92,7 @@ regime_universe:
     # ============================
     cfnai:
       id: CFNAI
+      category: growth
       frequency: monthly
       name: "Chicago Fed National Activity Index"
       transforms:
@@ -93,6 +101,7 @@ regime_universe:
 
     indpro:
       id: INDPRO
+      category: growth
       frequency: monthly
       name: "Industrial Production Index"
       transforms:
@@ -105,6 +114,7 @@ regime_universe:
     # ============================
     jobless_claims:
       id: ICSA
+      category: employment
       frequency: weekly
       name: "Initial jobless claims"
       description: "Leading labour stress indicator; use smoothed change to reduce weekly noise."

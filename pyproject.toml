@@ -44,3 +44,5 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-v"
+log_cli = true
+log_cli_level = "WARNING"

@@ -1,5 +1,5 @@
 import pytest
-from regime_ml.features.common.transform_parser import TransformParser, parse_transforms
+from regime_ml.features.common.transform_parser import TransformParser
 
 def test_parse_chain_string():
     parser = TransformParser()

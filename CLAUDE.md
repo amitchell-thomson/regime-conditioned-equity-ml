@@ -4,6 +4,9 @@
 
 Regime-conditioned equity ML trading system. HMM-detected market regimes condition downstream predictive models to handle financial non-stationarity.
 
+This repository is designed to resemble a hedge-fund-grade research pipeline.
+All changes should maintain production-level clarity, modularity, and statistical rigor.
+
 **Pipeline:** Raw Data → Load → Select → Clean → Align → Features → Regime Detection → Models → Portfolio
 
 **Phase status:**
@@ -93,8 +96,6 @@ vix:
 
 **Feature naming:** `{INDICATOR}_{transform_chain}` e.g. `VIXCLS_diff_5_zscore_126`
 
-**Data:** 5 indicators (T10Y3M, VIXCLS, NFCI, PCEPILFE, CFNAI), 2005–2026, parquet in `data/` (gitignored)
-
 ---
 
 ## Commands
@@ -120,7 +121,12 @@ ruff check --fix src/ tests/
 - Descriptive names — no `x`, `df2`, `tmp`
 - Pure logic separated from I/O
 
-**Tests:** Every new transform needs unit tests covering normal operation, NaNs, insufficient window length, and staleness behaviour. Run `pytest tests/ -v` before marking anything done.
+**Tests:** All new logic requires unit tests. Run `pytest tests/ -v` before marking anything done.
+
+- Transforms: normal operation, NaNs, insufficient window length, staleness behaviour
+- Regime metrics and selection: expected outputs, edge cases, determinism (fix random seeds)
+- Data pipeline: alignment correctness, staleness flag propagation, missing data handling
+- Any causal/non-causal boundary: verify `filter_proba()` produces no look-ahead
 
 ---
 
