@@ -3,7 +3,6 @@ import numpy as np
 from typing import Dict, Any
 from sklearn.covariance import LedoitWolf
 from regime_ml.data.macro import build_featuregroup_map
-from regime_ml.features.macro.selection import get_top_features
 
 def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
     """
@@ -260,8 +259,9 @@ def compare_hmm_models(
         split_date = model_data["split_date"]
         this_split = pd.Timestamp(model_data.get("split_date", split_date))
 
-        # Select features (kept as your current approach)
-        selected_features = get_top_features(n=n_features)
+        # Select the first n_features columns — features DataFrame is expected to have
+        # PC columns ordered by explained variance (output of GroupPCATransformer.transform())
+        selected_features = list(features.columns[:n_features])
         df_selected = features[selected_features]
 
         # Build group map only for selected features

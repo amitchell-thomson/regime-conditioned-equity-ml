@@ -8,6 +8,7 @@ regime_universe:
   processed_path: "data/processed/macro_processed.parquet"
   raw_features_path: "data/features/macro_features_raw.parquet"
   ready_features_path: "data/features/macro_features_ready.parquet"
+  pca_loadings_dir: "data/features/pca_loadings"
   
   lookback:
     start: "2000-01-02"

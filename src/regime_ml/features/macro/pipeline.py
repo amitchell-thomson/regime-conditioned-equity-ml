@@ -18,11 +18,14 @@ import logging
 import pandas as pd
 import yaml
 
+from pathlib import Path
+
 from regime_ml.features.common.transform_parser import TransformParser
 from regime_ml.features.macro.validator import validate_macro_features
 from regime_ml.utils.config import load_configs
 from regime_ml.data.common.loaders import load_dataframe
-from regime_ml.features.macro.selection import get_top_features
+from regime_ml.features.macro.selection import select_features
+from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 logger = logging.getLogger(__name__)
 
@@ -164,28 +167,37 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     feature_data.to_parquet(raw_output_path)
     logger.info("Saved raw features to: %s", raw_output_path)
 
-    # Drop burn-in period
+    # Drop burn-in period — all features must be NaN-free before PCA
     feature_data_ready = feature_data.dropna()
 
-    # Get top features
-    top_features = get_top_features(n=8)
-    feature_data_ready = feature_data_ready[top_features]
+    # Map each feature column to its macro group (rates/inflation/growth/...)
+    group_map = build_featuregroup_map(list(feature_data_ready.columns))
 
-    # Save selected_features to parquet
+    # Apply within-group PCA: fit on IS data only, transform full dataset
+    pc_features, pca_transformer = select_features(feature_data_ready, group_map, cfg)
+
+    # Persist PCA loadings and explained variance for interpretability
+    loadings_dir = Path(regime_cfg["pca_loadings_dir"])
+    loadings_dir.mkdir(parents=True, exist_ok=True)
+    pca_transformer.save_loadings(loadings_dir)
+
+    # Save ready features (PC columns)
     selected_output_path = regime_cfg["ready_features_path"]
-    feature_data_ready.to_parquet(selected_output_path)
+    pc_features.to_parquet(selected_output_path)
 
-    logger.info("Selected %d features", len(feature_data_ready.columns))
+    logger.info("Selected %d PC features", len(pc_features.columns))
     logger.info(
         "Date range: %s to %s",
-        feature_data_ready.index.min(),
-        feature_data_ready.index.max(),
+        pc_features.index.min(),
+        pc_features.index.max(),
     )
-    logger.info("Number of rows: %d", len(feature_data_ready))
-    logger.info("Saved to: %s and %s", raw_output_path, selected_output_path)
+    logger.info("Number of rows: %d", len(pc_features))
+    logger.info("Saved raw features to: %s", raw_output_path)
+    logger.info("Saved PC features to: %s", selected_output_path)
+    logger.info("Saved PCA loadings to: %s", loadings_dir)
 
-    # Create feature metadata
-    create_feature_metadata(feature_data_ready, frequency_map)  # type: ignore
+    # Create feature metadata (based on PC columns)
+    create_feature_metadata(pc_features, frequency_map)  # type: ignore
 
     return feature_data
 

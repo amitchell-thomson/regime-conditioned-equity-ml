@@ -1,0 +1,14 @@
+train_end_date: "2019-01-01"
+
+feature_selection:
+  group_pca:
+    # Number of principal components to retain per macro group.
+    # Increase for richer groups with more indicators; decrease for simpler groups.
+    # To vary candidate feature counts for HMM selection, use GroupPCATransformer.get_ordered_pc_columns()[:N].
+    n_components:
+      rates: 2
+      inflation: 1
+      growth: 2
+      employment: 1
+      liquidity: 1
+      stress: 2
