@@ -1,6 +1,9 @@
 """Macro data cleaning utilities."""
 
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def roll_weekend_releases(df: pd.DataFrame) -> pd.DataFrame:
@@ -59,6 +62,36 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def trim_to_own_start(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Trim each series to its own first valid observation, allowing ragged starts.
+
+    Rows where 'value' is NaN before a series' first real observation are dropped
+    per-series. Different series may therefore start on different dates in the
+    returned DataFrame (ragged). This is the correct behaviour when mixing FRED
+    and ALFRED sources: FRED market-data series start in 2000 while ALFRED
+    economic series start when ALFRED began archiving them (~2009-2011).
+
+    Args:
+        df: DataFrame with 'series_code', 'date', and 'value' columns.
+
+    Returns:
+        pd.DataFrame: Long-format DataFrame with per-series leading NaN rows removed.
+    """
+    first_valid = df[df['value'].notna()].groupby('series_code')['date'].min()
+    df_with_start = df.join(first_valid.rename('_series_start'), on='series_code')
+    result = df_with_start[df_with_start['date'] >= df_with_start['_series_start']]
+    result = result.drop(columns='_series_start').reset_index(drop=True)
+    n_removed = len(df) - len(result)
+    logger.info(
+        "trim_to_own_start: removed %d pre-start rows; series start dates:",
+        n_removed,
+    )
+    for code, start in first_valid.sort_values().items():
+        logger.info("  %-10s  %s", code, start.date())
+    return result
+
+
 def trim_to_common_start(df: pd.DataFrame) -> pd.DataFrame:
     """
     Trim all series to start at the latest start date across all series.
@@ -76,12 +109,12 @@ def trim_to_common_start(df: pd.DataFrame) -> pd.DataFrame:
     # Get the latest of these first dates
     latest_start_date = first_dates.max()
     
-    print(f"  Trimming to common start date: {latest_start_date.date()}")
-    
+    logger.info("Trimming to common start date: %s", latest_start_date.date())
+
     # Filter to start from that date
-    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True) # type: ignore
-    
+    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True)  # type: ignore
+
     rows_removed = len(df) - len(result)
-    print(f"  Removed {int(rows_removed/df['series_code'].nunique())} dates per series")
+    logger.info("Removed %d dates per series", int(rows_removed / df['series_code'].nunique()))
     
     return result

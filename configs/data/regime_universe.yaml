@@ -13,12 +13,42 @@ regime_universe:
     start: "2000-01-02"
     end: "2026-01-23"
 
+  # Maximum days a forward-filled value is considered valid, by native frequency.
+  # After this many calendar days without a new observation, value is set to NaN.
+  max_staleness_days:
+    daily: 5        # >1 week stale -> NaN (handles weekends + short FRED outages)
+    weekly: 21      # >3 weeks -> NaN
+    monthly: 65     # >~2 months -> NaN (catches discontinued series)
+    irregular: 65
+    unknown: 65
+
+  # ALFRED vintage data settings (Archival FRED -- real-time point-in-time data).
+  # ALFRED eliminates publication-lag lookahead bias by using values as they were
+  # known on each date, not final revised values.
+  alfred:
+    use_alfred: false     # Global fallback for series without an explicit use_alfred override.
+                          # All configured series define use_alfred explicitly, so this
+                          # only affects hypothetical future series added without an override.
+    # Approximate days between observation period end and first publication.
+    # Used for documentation and as Tier-2 fallback when use_alfred=false.
+    release_lag_days:
+      CFNAI: 28            # Released ~4 weeks after reference month end
+      INDPRO: 16           # Released ~mid-month for prior month
+      PCEPILFE: 30         # Released ~30 days after reference month end
+      VIXCLS: 1            # Published same day
+      DGS2: 1
+      DGS10: 1
+      T10Y3M: 1
+      NFCI: 4              # Published Thursday for prior week
+      ICSA: 5              # Published Thursday for prior week
+
   series:
     # ============================
     # Risk / Financial Stress
     # ============================
     vix:
       id: VIXCLS
+      use_alfred: false     # Market-quoted daily data; FRED never revises it
       category: stress
       frequency: daily
       name: "CBOE Volatility Index"
@@ -31,6 +61,7 @@ regime_universe:
 
     nfci:
       id: NFCI
+      use_alfred: true      # Composite index; subject to methodology revisions
       category: liquidity
       frequency: weekly
       name: "Chicago Fed National Financial Conditions Index"
@@ -45,6 +76,7 @@ regime_universe:
     # ============================
     ust2y:
       id: DGS2
+      use_alfred: false     # Market-quoted daily data; FRED never revises it
       category: rates
       frequency: daily
       name: "2Y Treasury yield"
@@ -54,6 +86,7 @@ regime_universe:
 
     ust10y:
       id: DGS10
+      use_alfred: false     # Market-quoted daily data; FRED never revises it
       category: rates
       frequency: daily
       name: "10Y Treasury yield"
@@ -65,6 +98,7 @@ regime_universe:
 
     yc_10_3m:
       id: T10Y3M
+      use_alfred: false     # Market-quoted daily spread; ALFRED archive only from 2014 — binding constraint
       category: rates
       frequency: daily
       name: "10Y-3M yield curve slope"
@@ -79,6 +113,7 @@ regime_universe:
     # ============================
     pce_core:
       id: PCEPILFE
+      use_alfred: true      # BEA releases and revises; initial estimates often revised materially
       category: inflation
       frequency: monthly
       name: "Core PCE price index"
@@ -92,6 +127,7 @@ regime_universe:
     # ============================
     cfnai:
       id: CFNAI
+      use_alfred: true      # Composite index; heavily revised in first 1-2 years after release
       category: growth
       frequency: monthly
       name: "Chicago Fed National Activity Index"
@@ -101,6 +137,7 @@ regime_universe:
 
     indpro:
       id: INDPRO
+      use_alfred: true      # Fed statistical release; subject to benchmark revisions
       category: growth
       frequency: monthly
       name: "Industrial Production Index"
@@ -114,6 +151,7 @@ regime_universe:
     # ============================
     jobless_claims:
       id: ICSA
+      use_alfred: true      # DOL administrative data; revised weekly with seasonal adjustment changes
       category: employment
       frequency: weekly
       name: "Initial jobless claims"

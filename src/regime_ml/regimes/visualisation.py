@@ -9,6 +9,7 @@ Provides functions to visualize:
 - Market performance by regime
 """
 
+import logging
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -16,6 +17,8 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 from typing import Optional, Dict, List
 import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 
 def plot_regime_timeseries(
@@ -507,19 +510,19 @@ def plot_ticker_by_regime(
         title = f"{ticker} Price by Regime"
     
     # Download ticker data
-    print(f"Downloading {ticker} data from {start_date} to {end_date}...")
+    logger.info("Downloading %s data from %s to %s...", ticker, start_date, end_date)
     ticker_data = yf.download(ticker, start=start_date, end=end_date, progress=False)  # type: ignore
-    
+
     if ticker_data.empty:  # type: ignore
         raise ValueError(f"No data downloaded for ticker {ticker}")
-    
+
     # Handle MultiIndex columns (yfinance sometimes returns these)
     if isinstance(ticker_data.columns, pd.MultiIndex):  # type: ignore
         ticker_data.columns = ticker_data.columns.get_level_values(0)  # type: ignore
-    
+
     # Ensure we have the requested price type
     if price_type not in ticker_data.columns:  # type: ignore
-        print(f"Warning: {price_type} not found, using Close instead")
+        logger.warning("Price type %s not found for %s, using Close instead", price_type, ticker)
         price_type = 'Close'
     
     # Create regime dataframe

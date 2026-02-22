@@ -14,6 +14,7 @@ Key behaviors:
 - All features are automatically aligned to a common date index via pandas
 """
 
+import logging
 import pandas as pd
 import yaml
 
@@ -21,7 +22,9 @@ from regime_ml.features.common.transform_parser import TransformParser
 from regime_ml.features.macro.validator import validate_macro_features
 from regime_ml.utils.config import load_configs
 from regime_ml.data.common.loaders import load_dataframe
-from regime_ml.features.macro.selection import get_feature_groups, get_top_features
+from regime_ml.features.macro.selection import get_top_features
+
+logger = logging.getLogger(__name__)
 
 
 def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None:
@@ -31,7 +34,7 @@ def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None
         parts = col.split('_')
         indicator = parts[0]
         transforms = '_'.join(parts[1:])
-        
+
         feature_metadata.append({
             'name': col,
             'indicator': indicator,
@@ -47,13 +50,13 @@ def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None
     with open('data/features/feature_metadata.yaml', 'w') as f:
         yaml.dump({'features': feature_metadata, 'n_features': len(feature_metadata)}, f)
 
-    print(f"Created metadata for {len(feature_metadata)} features")
+    logger.info("Created metadata for %d features", len(feature_metadata))
 
 
 def run_macro_feature_pipeline() -> pd.DataFrame:
     """
     Generate macro features from processed data using YAML-defined transform chains.
-    
+
     Pipeline steps:
     1. Load processed macro data (forward-filled to daily business day frequency)
     2. Parse transform chains from YAML configuration
@@ -64,13 +67,13 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
                 - Forward-fills results to full daily index
             - Generate descriptive feature names
     4. Save features to parquet with all columns aligned to common index
-    
+
     Returns:
         DataFrame with all generated features, indexed by date
-        
+
     Output:
         Saves features to path specified in regime_universe.features_path
-        
+
     Notes:
         - First ~500-700 days will have nulls due to window burn-in periods
         - Monthly indicators show step functions (constant within month)
@@ -81,16 +84,24 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     cfg = load_configs()
     regime_cfg = cfg["macro_data"]["regime_universe"]
     processed_path = regime_cfg["processed_path"]
-    
+
     # Load processed macro data
     # Expected format: columns=['date', 'series_code', 'value', 'is_new_data']
     processed_data = load_dataframe(processed_path)
-    
+
+    logger.info(
+        "Loaded processed macro data: %d rows, %d series, %s to %s",
+        len(processed_data),
+        processed_data["series_code"].nunique(),
+        processed_data["date"].min().strftime("%Y-%m-%d"),
+        processed_data["date"].max().strftime("%Y-%m-%d"),
+    )
+
     # Parse transform chains from YAML configuration
     # Returns: {series_code: [ChainedTransform, ...]}
     transform_parser = TransformParser()
     transform_chains = transform_parser.parse_yaml_config(regime_cfg)
-    
+
     # Extract frequency map from YAML configuration
     # Maps series_code -> frequency ('daily', 'weekly', 'monthly')
     frequency_map = {}
@@ -99,29 +110,29 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
         frequency = ticker_config.get('frequency', 'daily')  # Default to daily if not specified
         if series_code:
             frequency_map[series_code] = frequency
-    
+
     # Initialize feature dataframe
     # Pandas will auto-align features to common index when assigning columns
     feature_data = pd.DataFrame()
-    
+
     # Process each macro indicator
     for series_code in processed_data["series_code"].unique():
         # Extract data for this indicator
         ticker_df = processed_data[processed_data["series_code"] == series_code].set_index("date")
-        
+
         # Staleness flags: True = actual data point, False = forward-filled
         is_new_data = pd.Series(ticker_df["is_new_data"])
-        
+
         # Indicator values (already forward-filled to daily frequency)
         series = pd.Series(ticker_df["value"])
-        
+
         # Get transform chains for this indicator
         chains = transform_chains[series_code]
-        
+
         # Generate descriptive feature names
         # Format: {SERIES_CODE}_{transform1}_{param1}_{transform2}_{param2}...
         feature_names = transform_parser.get_feature_names(series_code, chains)
-        
+
         # Apply each transform chain
         for feature_name, chain in zip(feature_names, chains):
             # Transform with staleness awareness:
@@ -132,22 +143,26 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
                 series=series,
                 is_new_data=is_new_data
             )
-            
+
             # Add feature to dataframe (auto-aligns by date index)
             feature_data[feature_name] = transformed_series
-    
+
+        logger.debug("Computed %d features for %s", len(feature_names), series_code)
+
+    logger.info("Generated %d raw features", len(feature_data.columns))
+
     # Validate features before saving
     validation_results = validate_macro_features(feature_data, frequency_map)
-    
+
     # Check if validation passed
     errors = [r for r in validation_results if r.severity == 'error' and not r.passed]
     if errors:
-        print("\n[WARN] Validation found errors but continuing with save.")
-        print("       Review validation results above before using these features.")
-    
+        logger.warning("Validation found %d errors. Review before using these features.", len(errors))
+
     # Save raw_features to parquet
     raw_output_path = regime_cfg["raw_features_path"]
     feature_data.to_parquet(raw_output_path)
+    logger.info("Saved raw features to: %s", raw_output_path)
 
     # Drop burn-in period
     feature_data_ready = feature_data.dropna()
@@ -159,14 +174,18 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     # Save selected_features to parquet
     selected_output_path = regime_cfg["ready_features_path"]
     feature_data_ready.to_parquet(selected_output_path)
-    
-    print(f"\nSelected {len(feature_data_ready.columns)} features")
-    print(f"Date range: {feature_data_ready.index.min()} to {feature_data_ready.index.max()}")
-    print(f"Number of rows: {len(feature_data_ready)}")
-    print(f"Saved to: {raw_output_path} and {selected_output_path}")
+
+    logger.info("Selected %d features", len(feature_data_ready.columns))
+    logger.info(
+        "Date range: %s to %s",
+        feature_data_ready.index.min(),
+        feature_data_ready.index.max(),
+    )
+    logger.info("Number of rows: %d", len(feature_data_ready))
+    logger.info("Saved to: %s and %s", raw_output_path, selected_output_path)
 
     # Create feature metadata
-    create_feature_metadata(feature_data_ready, frequency_map) # type: ignore
+    create_feature_metadata(feature_data_ready, frequency_map)  # type: ignore
 
     return feature_data
 

@@ -13,11 +13,14 @@ def _make_series_df(
 ) -> pd.DataFrame:
     """Build a minimal aligned-format DataFrame for a single series."""
     idx = pd.to_datetime(dates)
+    # Production code stores True for real observations and NaN for forward-filled rows.
+    # Convert False → None here so the fixture matches that contract.
+    is_new_mapped = [True if v else None for v in is_new]
     return pd.DataFrame(
         {
             "series_code": series_code,
             "value": values,
-            "is_new_data": is_new,
+            "is_new_data": is_new_mapped,
             "series_name": series_code,
             "category": "test",
             "native_freq": "daily",
@@ -29,7 +32,7 @@ def _make_series_df(
 
 def _days_since_update(aligned_df: pd.DataFrame) -> list[int]:
     """Extract days_since_update column from an aligned DataFrame."""
-    is_new = aligned_df["is_new_data"].fillna(False)
+    is_new = aligned_df["is_new_data"].notna()
     group_id = is_new.cumsum()
     return aligned_df.groupby(group_id).cumcount().tolist()
 

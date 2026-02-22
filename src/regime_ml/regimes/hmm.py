@@ -18,31 +18,66 @@ def initialise_emissions(
     n_clusters: int,
     random_state: Optional[int] = None,
     covariance_type: str = 'full',
-    scale_features: bool = True
+    scale_features: bool = True,
+    train_end_date: Optional[pd.Timestamp] = None,
 ) -> Tuple[np.ndarray, np.ndarray, StandardScaler]:
     """
     Initialize HMM emission parameters using KMeans clustering.
-    
+
     Computes cluster means and covariances from k-means clustering on training data.
     These can be used to initialize HMM emission distributions.
-    
+
     Args:
-        df_train: Training features DataFrame (n_samples, n_features)
+        df_train: Training features DataFrame (n_samples, n_features).
+                  Must contain only in-sample data. If df_train has a DatetimeIndex
+                  and train_end_date is provided, this is enforced with a ValueError.
         n_clusters: Number of clusters (should match n_regimes)
         random_state: Random seed for k-means initialization
         covariance_type: 'full' or 'diag' - format of returned covariance matrices
         scale_features: Whether to standardize features before clustering (recommended)
-    
+        train_end_date: Optional upper bound for the training period. If df_train has a
+                        DatetimeIndex and any date exceeds this value, a ValueError is
+                        raised to prevent OOS data from leaking into the scaler fit.
+
     Returns:
         Tuple of (means, covariances, scaler):
         - means: Cluster means array (n_clusters, n_features)
         - covariances: Covariance matrices array, shape depends on covariance_type
-        - scaler: Fitted StandardScaler for transforming new data
+        - scaler: Fitted StandardScaler for transforming new data.
+                  The scaler carries a ``_regime_ml_train_date_range`` attribute
+                  with (min_date, max_date) of the training set for audit purposes.
     """
+    # Enforce IS-only scaler fitting
+    _train_date_range: Optional[Tuple[pd.Timestamp, pd.Timestamp]] = None
+    if isinstance(df_train.index, pd.DatetimeIndex):
+        train_min = df_train.index.min()
+        train_max = df_train.index.max()
+        _train_date_range = (train_min, train_max)
+        logger.info(
+            "initialise_emissions: %d rows, %s to %s",
+            len(df_train), train_min.date(), train_max.date()
+        )
+        if train_end_date is not None and train_max > train_end_date:
+            raise ValueError(
+                "df_train contains out-of-sample dates: max date in df_train is %s "
+                "but train_end_date is %s. Pass only in-sample data to "
+                "initialise_emissions()." % (train_max.date(), train_end_date.date())
+            )
+        if train_end_date is not None:
+            logger.info(
+                "initialise_emissions: IS boundary respected (max=%s <= train_end_date=%s)",
+                train_max.date(), train_end_date.date()
+            )
+    else:
+        logger.info(
+            "initialise_emissions: df_train has no DatetimeIndex; "
+            "IS boundary cannot be validated — pass train_end_date with a DatetimeIndex to enforce."
+        )
+
     # Convert to numpy array
     X_train = df_train.values
     n_features = X_train.shape[1]
-    
+
     # Scale features (important for k-means distance-based clustering)
     scaler = StandardScaler()
     if scale_features:
@@ -51,6 +86,9 @@ def initialise_emissions(
         X_train_scaled = X_train.copy()
         # Still fit scaler for consistency (identity transform)
         scaler.fit(X_train)
+
+    # Attach training date range to scaler for audit/inspection
+    scaler._regime_ml_train_date_range = _train_date_range  # type: ignore[attr-defined]
     
     # Fit k-means
     kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)

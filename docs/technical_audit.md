@@ -1,7 +1,7 @@
 # TECHNICAL AUDIT: Regime-Conditioned Equity ML System
 
 **Classification**: Internal Code Review Memo
-**Date**: 2026-02-17
+**Date**: 2026-02-21
 **Scope**: Pre-deployment quant hardening review, Phases 1-2
 
 ---
@@ -45,9 +45,9 @@ The architecture is well-structured and the staleness-aware transform framework 
 
 ### Pre-Deployment Checklist
 
-- [ ] Fix lookahead bias in macro data — use vintage data or apply publication lags (Step 2.4)
-- [ ] Fix staleness detection — use actual observation flags, not value-change detection (Step 2.1)
-- [ ] Ensure scaler is IS-only — verify no OOS leakage (Step 2.2)
+- [x] Fix lookahead bias in macro data — ALFRED vintage data integrated; `build_realtime_series()` reconstructs point-in-time values (Step 2.4)
+- [x] Fix staleness detection — `is_new_data=True` unconditionally pre-alignment; value-change check removed (Step 2.1)
+- [x] Ensure scaler is IS-only — `train_end_date` guard added to `initialise_emissions`; `ValueError` raised on OOS leakage; `scaler._regime_ml_train_date_range` attached for audit (Step 2.2)
 - [ ] Add multi-seed initialization — current results may be a local optimum (Step 3.1)
 - [ ] Add BIC/AIC — without complexity penalty, model selection is biased toward overfitting (Step 4.1)
 - [x] Increase OOS weight — raised from 5% → 25% (Step 1.2a)
@@ -58,10 +58,10 @@ The architecture is well-structured and the staleness-aware transform framework 
 ### Pre-GitHub Checklist
 
 - [x] Remove hardcoded paths — MACRO_DATA_PATH env var; loaders.py raises ValueError; .env.example added (Step 1.7b)
-- [ ] Fix empty test files — conftest.py now has caplog fixture; test_transforms.py and test_registry.py still 0 bytes (Step 6.2)
+- [ ] Fix empty test files — conftest.py now has caplog fixture; test_transforms.py and test_registry.py still 0 bytes; 82 tests now passing across 12 test files (Step 6.2 partially done)
 - [x] Fix the broken test — `test_get_feature_names` was already asserting correct values (Step 1.6)
 - [x] Fix typo — "Policy-Contstrained" (Step 1.3a)
-- [ ] Replace `print()` with `logging` — NullHandler + package logger added (Step 1.9a ✓); 180 print→logging migration pending (Step 2.0 ✗)
+- [x] Replace `print()` with `logging` — NullHandler + package logger added (Step 1.9a ✓); all 180 print→logging migrated across 9 files (Step 2.0 ✓)
 - [ ] Remove `.env` from repo — it's listed in the project and likely contains FRED API keys
 - [ ] Add CI/CD — no GitHub Actions for tests/lint (Step 7.4)
 - [ ] Resolve `# type: ignore` comments — 17+ occurrences silently suppress type errors (Step 7.5)
@@ -452,6 +452,32 @@ logging.getLogger("matplotlib").setLevel(logging.ERROR)
 Fix before touching any model. These create lookahead bias or corrupt the feature values that everything downstream depends on.
 
 Start with 2.0 (print→logging) so that all pipeline output from 2.1 onward is structured, observable, and suppressible in tests.
+
+### Phase 2 — Implementation Status (2026-02-21)
+
+| Step | Item | Status |
+|------|------|--------|
+| 2.0 | Replace ~180 `print()` calls with structured `logging` across 9 files | ✅ Done |
+| 2.1 | Fix staleness detection — `is_new_data=True` unconditionally pre-alignment | ✅ Done |
+| 2.2 | IS-only scaler enforcement — `train_end_date` guard + `scaler._regime_ml_train_date_range` | ✅ Done |
+| 2.3 | Max staleness limit on ffill — per-frequency thresholds in YAML + `align_to_calendar()` | ✅ Done |
+| 2.4 | ALFRED vintage integration — `load_alfred_data()`, `build_realtime_series()`, pipeline routing | ✅ Done |
+
+**Additional bugs fixed during testing:**
+- `features/macro/pipeline.py` and `features/macro/__init__.py`: erroneous `get_feature_groups` import removed
+- `build_realtime_series()`: revision tie-breaking fixed — now takes latest revision of most recent obs period (`max realtime_start` among `max obs_date` candidates), not earliest vintage
+- `align_to_calendar()` frequency detection: `aligned['native_freq'].iloc[0]` returned NaN when calendar starts before first observation; fixed to `dropna().iloc[0]`
+
+**Test coverage added (36 new tests, 82/82 passing):**
+
+| File | Tests |
+|------|-------|
+| `tests/test_staleness_detection.py` | 8 — staleness fix correctness |
+| `tests/test_hmm_is_enforcement.py` | 10 — OOS guard, scaler metadata, logging |
+| `tests/test_max_staleness.py` | 9 — threshold enforcement, backward compat, freq fallback |
+| `tests/test_alfred_integration.py` | 17 — schema, causal correctness, filtering, deduplication |
+
+**Phase 2 complete. All 5 items resolved. Proceed to Phase 3.**
 
 ---
 
