@@ -1,5 +1,4 @@
 regime_universe:
-  frequency: 
   calendar: business
 
   # Override with MACRO_DATA_PATH environment variable (set in .env — see .env.example).
@@ -9,7 +8,7 @@ regime_universe:
   raw_features_path: "data/features/macro_features_raw.parquet"
   ready_features_path: "data/features/macro_features_ready.parquet"
   pca_loadings_dir: "data/features/pca_loadings"
-  
+
   lookback:
     start: "2000-01-02"
     end: "2026-01-23"
@@ -33,48 +32,52 @@ regime_universe:
     # Approximate days between observation period end and first publication.
     # Used for documentation and as Tier-2 fallback when use_alfred=false.
     release_lag_days:
-      CFNAI: 28            # Released ~4 weeks after reference month end
-      INDPRO: 16           # Released ~mid-month for prior month
-      PCEPILFE: 30         # Released ~30 days after reference month end
-      VIXCLS: 1            # Published same day
+      # Daily market data — published same/next business day, never revised
+      VIXCLS: 1
       DGS2: 1
       DGS10: 1
       T10Y3M: 1
+      T10Y2Y: 1
+      FEDFUNDS: 1
+      BAA10Y: 1
+      BAMLH0A0HYM2: 1
+      T10YIE: 1
+      T5YIFR: 1
+      DCOILWTICO: 1
+      # Weekly releases
       NFCI: 4              # Published Thursday for prior week
       ICSA: 5              # Published Thursday for prior week
+      WALCL: 5             # H.4.1 published Thursday for prior Wednesday
+      # Monthly releases
+      CFNAI: 28            # Released ~4 weeks after reference month end
+      INDPRO: 16           # Released ~mid-month for prior month
+      PCEPILFE: 30         # Released ~30 days after reference month end
+      CPIAUCSL: 15         # Released ~mid-month for prior month
+      M2SL: 14             # Released ~2 weeks after reference month end
+      UMCSENT: 14          # Preliminary mid-month; final end of month
+      UNRATE: 7            # BLS Jobs Report, first Friday after month end
+      PAYEMS: 7            # Same Jobs Report release
+      AHETPI: 7            # Same Jobs Report release
+      JTSJOL: 35           # BLS JOLTS released with ~6-week lag
 
   series:
     # ============================
-    # Risk / Financial Stress
+    # Rates & Yield Curve
+    # 5 series | 8 features
+    # PC1 = rate level / policy stance  (FEDFUNDS, DGS2, DGS10 load together)
+    # PC2 = curve shape / inversion     (T10Y2Y and T10Y3M diverge at inversions)
     # ============================
-    vix:
-      id: VIXCLS
-      use_alfred: false     # Market-quoted daily data; FRED never revises it
-      category: stress
+    fedfunds:
+      id: FEDFUNDS
+      use_alfred: false     # Effective rate published next business day; minimal revision
+      category: rates
       frequency: daily
-      name: "CBOE Volatility Index"
-      description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
+      name: "Federal Funds Rate"
+      description: "Primary US monetary policy rate; anchors the short end of the yield curve."
       transforms:
-        - [level, {z_score: {window: 63}}]  # Absolute stress level
-        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Short-term momentum
-        - [{ma: {window: 21}}, {diff: {periods: 21}}, {z_score: {window: 252}}]  # Medium-term trend
-        - [{pct_change: {periods: 1}}, {std: {window: 21}}, {z_score: {window: 126}}]  # Volatility of volatility
+        - [level, {z_score: {window: 252}}]                             # Policy stance level
+        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Hiking/cutting cycle magnitude
 
-    nfci:
-      id: NFCI
-      use_alfred: true      # Composite index; subject to methodology revisions
-      category: liquidity
-      frequency: weekly
-      name: "Chicago Fed National Financial Conditions Index"
-      description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
-      transforms:
-        - [level, {z_score: {window: 50}}]  # Current financial conditions
-        - [{diff: {periods: 21}}, {z_score: {window: 50}}]  # Tightening/loosening rate
-        - [{diff: {periods: 5}}, {diff: {periods: 5}}, {z_score: {window: 25}}]  # Acceleration
-
-    # ============================
-    # Monetary Policy & Yield Curve
-    # ============================
     ust2y:
       id: DGS2
       use_alfred: false     # Market-quoted daily data; FRED never revises it
@@ -83,7 +86,7 @@ regime_universe:
       name: "2Y Treasury yield"
       description: "Near-term policy expectations; front-end rates sensitivity."
       transforms:
-        - [level, {z_score: {window: 252}}]
+        - [level, {z_score: {window: 252}}]                             # Front-end rate level
 
     ust10y:
       id: DGS10
@@ -93,9 +96,18 @@ regime_universe:
       name: "10Y Treasury yield"
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
       transforms:
-        - [level, {z_score: {window: 252}}]  # Long-term rate level
-        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Growth/inflation expectations
-        - [{diff: {periods: 1}}, {std: {window: 21}}, {z_score: {window: 126}}]  # Rate uncertainty
+        - [level, {z_score: {window: 252}}]                             # Long-term rate level
+        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Medium-term rate shift
+
+    yc_10_2y:
+      id: T10Y2Y
+      use_alfred: false     # Market-quoted daily spread; no revision
+      category: rates
+      frequency: daily
+      name: "10Y-2Y yield curve slope"
+      description: "Classic recession indicator; captures near-to-long rate differential."
+      transforms:
+        - [level, {z_score: {window: 252}}]                             # Curve slope level
 
     yc_10_3m:
       id: T10Y3M
@@ -103,14 +115,83 @@ regime_universe:
       category: rates
       frequency: daily
       name: "10Y-3M yield curve slope"
-      description: "Cycle/recession indicator; robust curve-slope measure."
+      description: "Strongest recession predictor; captures policy-rate-to-long-end differential."
       transforms:
-        - [level, {z_score: {window: 252}}]  # Current curve slope (recession signal)
-        - [{diff: {periods: 21}}, {z_score: {window: 252}}]  # Steepening/flattening
-        - [{diff: {periods: 5}}, {z_score: {window: 126}}]  # Rate of adjustment
+        - [level, {z_score: {window: 252}}]                             # Curve slope level
+        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Steepening/flattening trend
+
+    # ============================
+    # Liquidity & Financial Conditions
+    # 6 series | 8 features
+    # PC1 = credit/financial stress  (VIX, NFCI, BAA10Y spread, HY spread load together)
+    # PC2 = monetary/balance-sheet liquidity  (M2, Fed BS diverge from stress direction)
+    # ============================
+    vix:
+      id: VIXCLS
+      use_alfred: false     # Market-quoted daily data; FRED never revises it
+      category: liquidity
+      frequency: daily
+      name: "CBOE Volatility Index"
+      description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
+      transforms:
+        - [level, {z_score: {window: 126}}]                             # Absolute stress level
+
+    nfci:
+      id: NFCI
+      use_alfred: true      # Composite index; subject to methodology revisions
+      category: liquidity
+      frequency: weekly
+      name: "Chicago Fed National Financial Conditions Index"
+      description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
+      transforms:
+        - [level, {z_score: {window: 50}}]                              # Current financial conditions
+        - [{diff: {periods: 21}}, {z_score: {window: 50}}]             # Tightening/loosening rate
+
+    baa10y_spread:
+      id: BAA10Y
+      use_alfred: false     # Market-quoted spread; no revision
+      category: liquidity
+      frequency: daily
+      name: "BAA-10Y credit spread"
+      description: "Investment-grade credit stress proxy; widens during risk-off and funding stress."
+      transforms:
+        - [level, {z_score: {window: 252}}]                             # Credit stress level
+
+    hy_spread:
+      id: BAMLH0A0HYM2
+      use_alfred: false     # ICE/BofA market data; published daily, no revision
+      category: liquidity
+      frequency: daily
+      name: "High-yield OAS spread"
+      description: "Sub-investment-grade credit risk premium; leading indicator of risk appetite and financial stress."
+      transforms:
+        - [level, {z_score: {window: 252}}]                             # Risk appetite level
+
+    m2:
+      id: M2SL
+      use_alfred: true      # Fed H.6 release; seasonal adjustment and methodology revisions
+      category: liquidity
+      frequency: monthly
+      name: "M2 money supply"
+      description: "Broad monetary aggregate; proxy for system liquidity and QE/QT transmission."
+      transforms:
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # Annual money supply growth
+
+    fed_bs:
+      id: WALCL
+      use_alfred: true      # Fed H.4.1; published weekly, occasionally restated
+      category: liquidity
+      frequency: weekly
+      name: "Federal Reserve total assets"
+      description: "Fed balance sheet size; direct measure of QE expansion and QT contraction."
+      transforms:
+        - [{pct_change: {periods: 52}}, {z_score: {window: 52}}]                # Annual QE/QT cycle
 
     # ============================
     # Inflation: Realised & Expected
+    # 4 series | 6 features
+    # PC1 = realised inflation level  (PCE core + CPI headline)
+    # PC2 = forward-looking expectations anchor  (10Y breakeven + 5Y5Y forward)
     # ============================
     pce_core:
       id: PCEPILFE
@@ -118,13 +199,47 @@ regime_universe:
       category: inflation
       frequency: monthly
       name: "Core PCE price index"
+      description: "Fed's preferred inflation gauge; excludes food and energy."
       transforms:
-        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]  # 12 months YoY, 5yr window
-        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]
-        - [{pct_change: {periods: 1}}, {z_score: {window: 36}}]  # 1-month change, 3yr window
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]            # YoY inflation rate
+        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]  # Acceleration
+
+    cpi_headline:
+      id: CPIAUCSL
+      use_alfred: true      # BLS release; headline CPI subject to methodological revisions
+      category: inflation
+      frequency: monthly
+      name: "Headline CPI (all urban consumers)"
+      description: "Broad consumer price level; the primary market-focal inflation benchmark."
+      transforms:
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]            # YoY inflation rate
+
+    breakeven_10y:
+      id: T10YIE
+      use_alfred: false     # TIPS-derived daily market quote; no revision
+      category: inflation
+      frequency: daily
+      name: "10Y breakeven inflation rate"
+      description: "Market-implied 10-year inflation expectations; TIPS-Treasury spread."
+      transforms:
+        - [level, {z_score: {window: 252}}]                             # Expectations level
+        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Medium-term expectations trend
+
+    forward_inflation_5y5y:
+      id: T5YIFR
+      use_alfred: false     # Derived market rate; published daily, no revision
+      category: inflation
+      frequency: daily
+      name: "5Y5Y forward inflation expectation"
+      description: "5-year, 5-year forward inflation rate; long-run credibility anchor independent of near-term inflation."
+      transforms:
+        - [level, {z_score: {window: 252}}]                             # Long-run credibility level
 
     # ============================
-    # Growth / Activity
+    # Growth, Activity & Real Economy
+    # 4 series | 7 features
+    # PC1 = real activity cycle  (CFNAI, INDPRO, oil price load positively in expansions)
+    # PC2 = demand-side momentum  (consumer sentiment + oil diverge at turning points)
     # ============================
     cfnai:
       id: CFNAI
@@ -132,9 +247,10 @@ regime_universe:
       category: growth
       frequency: monthly
       name: "Chicago Fed National Activity Index"
+      description: "85-indicator composite of national economic activity; designed for business-cycle detection."
       transforms:
-        - [level, {z_score: {window: 36}}]  # 3yr window (36 months)
-        - [{diff: {periods: 1}}, {z_score: {window: 36}}]  # 1-month diff
+        - [level, {z_score: {window: 36}}]                              # Activity level
+        - [{diff: {periods: 3}}, {z_score: {window: 36}}]              # Medium-term momentum
 
     indpro:
       id: INDPRO
@@ -142,13 +258,27 @@ regime_universe:
       category: growth
       frequency: monthly
       name: "Industrial Production Index"
+      description: "Manufacturing and mining output; high-frequency cyclical activity measure."
       transforms:
-        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]  # 12 months YoY
-        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]
-        - [{pct_change: {periods: 3}}, {z_score: {window: 36}}]  # 3-month change
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]            # YoY industrial growth
+
+    consumer_sentiment:
+      id: UMCSENT
+      use_alfred: true      # Survey with preliminary and final release; materially revised
+      category: growth
+      frequency: monthly
+      name: "University of Michigan Consumer Sentiment"
+      description: "Household demand-side confidence; leads consumption and captures regime-level optimism/pessimism."
+      transforms:
+        - [level, {z_score: {window: 36}}]                              # Sentiment level
+        - [{diff: {periods: 3}}, {z_score: {window: 36}}]              # Trend deterioration/improvement
+
 
     # ============================
     # Labour Market
+    # 5 series | 8 features
+    # PC1 = labour market health  (ICSA, UNRATE load negatively; PAYEMS, JTSJOL load positively)
+    # PC2 = wage pressure / tightness  (AHETPI loads distinctly as labour inflation)
     # ============================
     jobless_claims:
       id: ICSA
@@ -156,8 +286,49 @@ regime_universe:
       category: employment
       frequency: weekly
       name: "Initial jobless claims"
-      description: "Leading labour stress indicator; use smoothed change to reduce weekly noise."
+      description: "Leading labour stress indicator; high-frequency signal of layoff activity."
       transforms:
-        - [{ma: {window: 4}}, {z_score: {window: 50}}]  # Smoothed absolute level
-        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 50}}]  # Labour deterioration
-        - [{ma: {window: 4}}, {pct_change: {periods: 4}}, {z_score: {window: 25}}]  # Rapid shifts
+        - [{ma: {window: 4}}, {z_score: {window: 50}}]                              # Smoothed level
+        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 50}}] # Quarterly deterioration
+
+    unemployment:
+      id: UNRATE
+      use_alfred: true      # BLS; revised with annual benchmarks and seasonal adjustment
+      category: employment
+      frequency: monthly
+      name: "Unemployment rate"
+      description: "Headline lagging labour market indicator; regime-confirming cyclical benchmark."
+      transforms:
+        - [level, {z_score: {window: 36}}]                              # Unemployment level
+        - [{diff: {periods: 3}}, {z_score: {window: 36}}]              # Sahm-style 3-month change
+
+    nonfarm_payrolls:
+      id: PAYEMS
+      use_alfred: true      # BLS; large initial revisions common at turning points
+      category: employment
+      frequency: monthly
+      name: "Nonfarm payroll employment"
+      description: "Core employment growth signal; primary Jobs Report headline."
+      transforms:
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # Annual employment trend
+
+    wage_growth:
+      id: AHETPI
+      use_alfred: true      # BLS; revised with payroll benchmark revisions
+      category: employment
+      frequency: monthly
+      name: "Average hourly earnings (all private)"
+      description: "Nominal wage inflation; measures labour cost pressure and real income dynamics."
+      transforms:
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]            # Annual wage growth
+        - [{yoy: {periods: 12, method: pct_change}}, {diff: {periods: 1}}, {z_score: {window: 36}}]  # Acceleration
+
+    job_openings:
+      id: JTSJOL
+      use_alfred: true      # BLS JOLTS; released with ~6-week lag, subject to revision
+      category: employment
+      frequency: monthly
+      name: "JOLTS job openings"
+      description: "Labour demand indicator; captures structural tightness and demand for workers."
+      transforms:
+        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # Annual demand growth

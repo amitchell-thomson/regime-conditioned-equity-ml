@@ -7,8 +7,7 @@ feature_selection:
     # To vary candidate feature counts for HMM selection, use GroupPCATransformer.get_ordered_pc_columns()[:N].
     n_components:
       rates: 2
-      inflation: 1
+      inflation: 2
       growth: 2
-      employment: 1
-      liquidity: 1
-      stress: 2
+      employment: 2
+      liquidity: 2
