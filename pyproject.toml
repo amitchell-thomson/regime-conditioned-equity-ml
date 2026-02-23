@@ -24,6 +24,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "wrds>=3.1.6",
     "yfinance>=1.0",
+    "scipy>=1.14"
 ]
 
 [dependency-groups]

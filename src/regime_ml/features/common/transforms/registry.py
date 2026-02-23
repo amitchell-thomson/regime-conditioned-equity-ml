@@ -1,6 +1,6 @@
 from typing import Dict, Type
 from .base import BaseTransform
-from .statistical import ZScore, MovingAverage, ExponentialMovingAverage, RollingStd
+from .statistical import ZScore, MovingAverage, ExponentialMovingAverage, RollingStd, Winsorize
 from .temporal import Diff, PctChange, YoY, Returns, Level
 
 
@@ -21,6 +21,7 @@ class TransformRegistry:
         'ewm': ExponentialMovingAverage,
         'std': RollingStd,
         'rolling_std': RollingStd,
+        'winsorize': Winsorize,
         
         # Temporal
         'diff': Diff,

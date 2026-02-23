@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any
+from scipy import stats as scipy_stats
 from sklearn.covariance import LedoitWolf
 from regime_ml.data.macro import build_featuregroup_map
 
@@ -230,6 +231,104 @@ def evaluate_macro_coherence(
         "anova_top_features": top_feats,
     }
 
+
+def validate_gaussian_assumption(
+    X: np.ndarray,
+    regime_labels: np.ndarray,
+    feature_names: list[str] | None = None,
+) -> dict:
+    """
+    Per-regime per-feature diagnostics of the Gaussian emission assumption.
+
+    Computes skewness, excess kurtosis, and Shapiro-Wilk test statistics for
+    each (regime, feature) pair. Also returns QQ-quantile data for notebook
+    visualisation.
+
+    **Analysis only** — this function MUST NOT be called in the fitting path
+    or in any logic that produces trading signals. Use smooth_proba()-derived
+    hard labels for cleanest regime separation when calling this function.
+
+    Args:
+        X:             (T, d) feature array (scaled, post-transform).
+        regime_labels: (T,) integer hard-label array (e.g. from predict()).
+        feature_names: Optional list of d feature names. Defaults to 'f0','f1',...
+
+    Returns:
+        Nested dict keyed by regime_id (int):
+        {
+            regime_id: {
+                feature_name: {
+                    "n":              int,          # observations in this regime
+                    "skewness":       float,        # Fisher skewness
+                    "kurtosis":       float,        # excess kurtosis (Gaussian = 0)
+                    "shapiro_W":      float,        # Shapiro-Wilk W statistic
+                    "shapiro_p":      float,        # p-value (low → non-Gaussian)
+                    "qq_theoretical": np.ndarray,   # theoretical normal quantiles
+                    "qq_sample":      np.ndarray,   # sample quantiles
+                }
+            }
+        }
+
+    Notes:
+        - Shapiro-Wilk is set to NaN for regimes with < 8 observations (scipy
+          minimum is 3, but 8 is the practical minimum for interpretable results).
+        - Shapiro-Wilk is unreliable for n > 5000; the statistic is still
+          returned but interpret with caution.
+        - NaN and Inf values in X are dropped before computing statistics.
+    """
+    X = np.asarray(X, float)
+    regime_labels = np.asarray(regime_labels, int)
+    _, d = X.shape
+
+    if feature_names is None:
+        feature_names = [f"f{i}" for i in range(d)]
+
+    _SHAPIRO_MIN_N = 8
+    results: dict = {}
+
+    for regime_id in np.unique(regime_labels):
+        mask = regime_labels == regime_id
+        X_regime = X[mask]
+        n_regime = X_regime.shape[0]
+        regime_stats: dict = {}
+
+        for j, fname in enumerate(feature_names):
+            col = X_regime[:, j]
+            col_clean = col[np.isfinite(col)]
+            n_clean = len(col_clean)
+
+            skew = float(scipy_stats.skew(col_clean)) if n_clean >= 2 else np.nan
+            kurt = float(scipy_stats.kurtosis(col_clean, fisher=True)) if n_clean >= 2 else np.nan
+
+            if n_clean >= _SHAPIRO_MIN_N:
+                w_stat, p_val = scipy_stats.shapiro(col_clean)
+                sw_w, sw_p = float(w_stat), float(p_val)
+            else:
+                sw_w, sw_p = np.nan, np.nan
+
+            if n_clean >= 2:
+                (osm, osr), _ = scipy_stats.probplot(col_clean, dist="norm")
+                qq_theoretical = np.asarray(osm, float)
+                qq_sample = np.asarray(osr, float)
+            else:
+                qq_theoretical = np.array([], float)
+                qq_sample = np.array([], float)
+
+            regime_stats[fname] = {
+                "n":              n_regime,
+                "skewness":       skew,
+                "kurtosis":       kurt,
+                "shapiro_W":      sw_w,
+                "shapiro_p":      sw_p,
+                "qq_theoretical": qq_theoretical,
+                "qq_sample":      qq_sample,
+            }
+
+        results[int(regime_id)] = regime_stats
+
+    return results
+
+
 def compare_hmm_models(
     features: pd.DataFrame,
     models: Dict[str, Any],
@@ -242,7 +341,7 @@ def compare_hmm_models(
           "model": fitted_HMMRegimeDetector,
           "n_features": int,
           "scaler": fitted scaler,
-          # optional override:
+          ### optional override:
           "split_date": "YYYY-MM-DD"
       }
     """

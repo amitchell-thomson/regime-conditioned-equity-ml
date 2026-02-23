@@ -671,9 +671,8 @@ The HMM assumes Gaussian emissions. Macro z-scores may be approximately Gaussian
 - Gaussian tails fall off as exp(-x²), real financial data falls off as x^(-α) — this mismatch means the model systematically underweights tail events
 
 **Fix**:
-1. Test with Student-t emissions (hmmlearn supports custom emission models via `_BaseHMM` subclassing)
-2. At minimum, add QQ-plots per regime to validate Gaussian assumption
-3. Consider winsorizing at 4σ before fitting to reduce tail sensitivity
+1. At minimum, add QQ-plots per regime to validate Gaussian assumption
+2. Consider winsorizing at 4σ before fitting to reduce tail sensitivity
 
 ---
 

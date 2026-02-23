@@ -4,11 +4,11 @@
 from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 
-def test_vixcls_maps_to_stress():
-    """VIXCLS features must map to 'stress' as declared in regime_universe.yaml."""
+def test_vixcls_maps_to_liquidity():
+    """VIXCLS features must map to 'liquidity' as declared in regime_universe.yaml."""
     result = build_featuregroup_map(["VIXCLS_level_zscore_63", "VIXCLS_diff_5_zscore_126"])
-    assert result["VIXCLS_level_zscore_63"] == "stress"
-    assert result["VIXCLS_diff_5_zscore_126"] == "stress"
+    assert result["VIXCLS_level_zscore_63"] == "liquidity"
+    assert result["VIXCLS_diff_5_zscore_126"] == "liquidity"
 
 
 def test_known_series_map_correctly():

@@ -23,42 +23,19 @@ regime_universe:
     unknown: 65
 
   # ALFRED vintage data settings (Archival FRED -- real-time point-in-time data).
-  # ALFRED eliminates publication-lag lookahead bias by using values as they were
-  # known on each date, not final revised values.
+  # ALFRED eliminates publication-lag and revision lookahead bias by using values
+  # as they were known on each date. Routing is controlled per-series via use_alfred.
   alfred:
     use_alfred: false     # Global fallback for series without an explicit use_alfred override.
-                          # All configured series define use_alfred explicitly, so this
-                          # only affects hypothetical future series added without an override.
-    # Approximate days between observation period end and first publication.
-    # Used for documentation and as Tier-2 fallback when use_alfred=false.
-    release_lag_days:
-      # Daily market data — published same/next business day, never revised
-      VIXCLS: 1
-      DGS2: 1
-      DGS10: 1
-      T10Y3M: 1
-      T10Y2Y: 1
-      FEDFUNDS: 1
-      BAA10Y: 1
-      BAMLH0A0HYM2: 1
-      T10YIE: 1
-      T5YIFR: 1
-      DCOILWTICO: 1
-      # Weekly releases
-      NFCI: 4              # Published Thursday for prior week
-      ICSA: 5              # Published Thursday for prior week
-      WALCL: 5             # H.4.1 published Thursday for prior Wednesday
-      # Monthly releases
-      CFNAI: 28            # Released ~4 weeks after reference month end
-      INDPRO: 16           # Released ~mid-month for prior month
-      PCEPILFE: 30         # Released ~30 days after reference month end
-      CPIAUCSL: 15         # Released ~mid-month for prior month
-      M2SL: 14             # Released ~2 weeks after reference month end
-      UMCSENT: 14          # Preliminary mid-month; final end of month
-      UNRATE: 7            # BLS Jobs Report, first Friday after month end
-      PAYEMS: 7            # Same Jobs Report release
-      AHETPI: 7            # Same Jobs Report release
-      JTSJOL: 35           # BLS JOLTS released with ~6-week lag
+                          # All configured series define use_alfred explicitly; this is a
+                          # safety net for any future series added without a flag.
+
+  # Global transform defaults.
+  # winsorize_sigma: symmetric clip bound applied after z-score for fat-tailed series.
+  # Applied to VIX and NFCI only — the two series with documented heavy tails.
+  # Never hardcode this value: always reference it here.
+  transforms:
+    winsorize_sigma: 4.0
 
   series:
     # ============================
@@ -75,8 +52,8 @@ regime_universe:
       name: "Federal Funds Rate"
       description: "Primary US monetary policy rate; anchors the short end of the yield curve."
       transforms:
-        - [level, {z_score: {window: 252}}]                             # Policy stance level
-        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Hiking/cutting cycle magnitude
+        - [level, {z_score: {window: 36}}]                             # Policy stance level
+        - [{diff: {periods: 6}}, {z_score: {window: 36}}]              # Hiking/cutting cycle magnitude
 
     ust2y:
       id: DGS2
@@ -134,18 +111,18 @@ regime_universe:
       name: "CBOE Volatility Index"
       description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
       transforms:
-        - [level, {z_score: {window: 126}}]                             # Absolute stress level
+        - [level, {z_score: {window: 126}}, {winsorize: {sigma: 4.0}}]  # Absolute stress level (clipped at 4σ — VIX has strong right skew)
 
     nfci:
       id: NFCI
-      use_alfred: true      # Composite index; subject to methodology revisions
+      use_alfred: false      # Composite index; subject to methodology revisions
       category: liquidity
       frequency: weekly
       name: "Chicago Fed National Financial Conditions Index"
       description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
       transforms:
-        - [level, {z_score: {window: 50}}]                              # Current financial conditions
-        - [{diff: {periods: 21}}, {z_score: {window: 50}}]             # Tightening/loosening rate
+        - [level, {z_score: {window: 50}}, {winsorize: {sigma: 4.0}}]                             # Current financial conditions (clipped at 4σ — NFCI has fat tails in stress periods)
+        - [{diff: {periods: 21}}, {z_score: {window: 50}}, {winsorize: {sigma: 4.0}}]             # Tightening/loosening rate (clipped at 4σ)
 
     baa10y_spread:
       id: BAA10Y
@@ -171,7 +148,7 @@ regime_universe:
       id: M2SL
       use_alfred: true      # Fed H.6 release; seasonal adjustment and methodology revisions
       category: liquidity
-      frequency: monthly
+      frequency: weekly
       name: "M2 money supply"
       description: "Broad monetary aggregate; proxy for system liquidity and QE/QT transmission."
       transforms:
@@ -179,7 +156,7 @@ regime_universe:
 
     fed_bs:
       id: WALCL
-      use_alfred: true      # Fed H.4.1; published weekly, occasionally restated
+      use_alfred: false      # Fed H.4.1; published weekly, occasionally restated
       category: liquidity
       frequency: weekly
       name: "Federal Reserve total assets"
@@ -243,7 +220,7 @@ regime_universe:
     # ============================
     cfnai:
       id: CFNAI
-      use_alfred: true      # Composite index; heavily revised in first 1-2 years after release
+      use_alfred: false      # Composite index; heavily revised in first 1-2 years after release
       category: growth
       frequency: monthly
       name: "Chicago Fed National Activity Index"
@@ -282,7 +259,7 @@ regime_universe:
     # ============================
     jobless_claims:
       id: ICSA
-      use_alfred: true      # DOL administrative data; revised weekly with seasonal adjustment changes
+      use_alfred: false      # DOL administrative data; revised weekly with seasonal adjustment changes
       category: employment
       frequency: weekly
       name: "Initial jobless claims"
@@ -325,7 +302,7 @@ regime_universe:
 
     job_openings:
       id: JTSJOL
-      use_alfred: true      # BLS JOLTS; released with ~6-week lag, subject to revision
+      use_alfred: false      # BLS JOLTS; released with ~6-week lag, subject to revision
       category: employment
       frequency: monthly
       name: "JOLTS job openings"

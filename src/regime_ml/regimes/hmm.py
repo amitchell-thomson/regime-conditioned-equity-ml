@@ -6,7 +6,9 @@ from typing import Optional, Tuple, Dict
 import numpy as np
 import pandas as pd
 from hmmlearn import hmm
+from scipy.optimize import linear_sum_assignment
 from sklearn.cluster import KMeans
+from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
 from .base import BaseRegimeDetector
@@ -106,22 +108,24 @@ def initialise_emissions(
         cluster_points = X_train_scaled[cluster_mask]
         
         if len(cluster_points) < 2:
-            # Not enough points for covariance - use identity matrix
+            # Degenerate cluster: not enough points for shrinkage estimation.
             cov = np.eye(n_features) * 1e-6
+            logger.warning(
+                "initialise_emissions: cluster %d has %d point(s); using identity fallback.",
+                cluster_id, len(cluster_points),
+            )
         else:
-            # Compute sample covariance matrix (unbiased, divide by n-1)
-            cov = np.cov(cluster_points.T, ddof=1)
-            
-            # Ensure positive semi-definite (numerical stability)
-            cov = (cov + cov.T) / 2  # Ensure symmetry
-            eigvals, eigvecs = np.linalg.eigh(cov)
-            eigvals = np.maximum(eigvals, 1e-6)  # Ensure positive eigenvalues
-            cov = eigvecs @ np.diag(eigvals) @ eigvecs.T
-            # Cholesky jitter: guarantee numerical positive-definiteness before
-            # hmmlearn's internal Cholesky decomposition during EM.
-            cov += 1e-6 * np.eye(n_features)
-        
-        # Handle NaN/Inf values
+            # Ledoit-Wolf shrinkage: guarantees PSD for any n_samples >= 2,
+            # including the rank-deficient case (n_points < n_features).
+            lw = LedoitWolf()
+            lw.fit(cluster_points)
+            cov = lw.covariance_
+
+        # Symmetry guard against float drift (LW should already be symmetric).
+        cov = (cov + cov.T) / 2
+        # Cholesky jitter: guarantee strict PD before hmmlearn's internal decomp.
+        cov += 1e-6 * np.eye(n_features)
+        # Sanitise any residual non-finite values from extreme cluster configs.
         cov = np.nan_to_num(cov, nan=0.0, posinf=1e6, neginf=-1e6)
         covariances.append(cov)
     
@@ -174,6 +178,135 @@ def initialise_probabilities(n_regimes: int) -> np.ndarray:
         Initial state probability vector (n_regimes,) summing to 1
     """
     return np.ones(n_regimes) / n_regimes
+
+
+def _kl_gaussian(
+    mu_p: np.ndarray,
+    cov_p: np.ndarray,
+    mu_q: np.ndarray,
+    cov_q: np.ndarray,
+    jitter: float = 1e-8,
+) -> float:
+    """
+    KL divergence KL(p || q) for multivariate Gaussians.
+
+    KL(p||q) = 0.5 * [log|Σ_q| - log|Σ_p| + tr(Σ_q^{-1} Σ_p)
+                       + (μ_p - μ_q)^T Σ_q^{-1} (μ_p - μ_q) - d]
+
+    Private helper for align_states(). Returns np.inf on numerical failure.
+    """
+    d = mu_p.shape[0]
+    Cq = cov_q + jitter * np.eye(d)
+    Cp = cov_p + jitter * np.eye(d)
+    try:
+        Cq_inv = np.linalg.inv(Cq)
+    except np.linalg.LinAlgError:
+        return np.inf
+    sign_q, logdet_q = np.linalg.slogdet(Cq)
+    sign_p, logdet_p = np.linalg.slogdet(Cp)
+    if sign_q <= 0 or sign_p <= 0:
+        return np.inf
+    diff = mu_p - mu_q
+    kl = 0.5 * (
+        logdet_q - logdet_p
+        + np.trace(Cq_inv @ Cp)
+        + float(diff @ Cq_inv @ diff)
+        - d
+    )
+    return float(max(kl, 0.0))
+
+
+def align_states(
+    reference_detector: "HMMRegimeDetector",
+    candidate_detector: "HMMRegimeDetector",
+) -> np.ndarray:
+    """
+    Compute the optimal permutation aligning candidate states to reference states.
+
+    Builds a (K, K) cost matrix where cost[i, j] = KL(candidate_i || reference_j)
+    and solves the linear assignment problem to find the minimum-cost bijection.
+
+    Args:
+        reference_detector: Fitted HMMRegimeDetector defining the target labelling.
+        candidate_detector: Fitted HMMRegimeDetector to be realigned.
+
+    Returns:
+        perm (np.ndarray, shape (K,)): perm[candidate_state] = reference_state.
+        Pass to permute_detector() to produce a relabelled candidate.
+
+    Raises:
+        ValueError: If either detector is unfitted or n_regimes differ.
+        NotImplementedError: If covariance_type != 'full' (only full supported).
+    """
+    if not reference_detector.is_fitted or not candidate_detector.is_fitted:
+        raise ValueError(
+            "Both detectors must be fitted before calling align_states()."
+        )
+    if reference_detector.n_regimes != candidate_detector.n_regimes:
+        raise ValueError(
+            f"n_regimes mismatch: reference has {reference_detector.n_regimes}, "
+            f"candidate has {candidate_detector.n_regimes}."
+        )
+    if (reference_detector.covariance_type != "full"
+            or candidate_detector.covariance_type != "full"):
+        raise NotImplementedError(
+            "align_states() only supports covariance_type='full'. "
+            f"Got reference={reference_detector.covariance_type!r}, "
+            f"candidate={candidate_detector.covariance_type!r}."
+        )
+
+    K = reference_detector.n_regimes
+    mu_ref   = reference_detector.model.means_    # (K, d)
+    cov_ref  = reference_detector.model.covars_   # (K, d, d)
+    mu_cand  = candidate_detector.model.means_    # (K, d)
+    cov_cand = candidate_detector.model.covars_   # (K, d, d)
+
+    cost = np.array([
+        [_kl_gaussian(mu_cand[i], cov_cand[i], mu_ref[j], cov_ref[j]) for j in range(K)]
+        for i in range(K)
+    ])
+    _, col_ind = linear_sum_assignment(cost)
+    return col_ind  # perm[candidate_state] = reference_state
+
+
+def permute_detector(
+    detector: "HMMRegimeDetector",
+    perm: np.ndarray,
+) -> "HMMRegimeDetector":
+    """
+    Return a new HMMRegimeDetector with state parameters reordered by perm.
+
+    All arrays are deep-copied; the input detector is not mutated.
+
+    Args:
+        detector: A fitted HMMRegimeDetector.
+        perm:     1-D int array of length K; perm[old_state] = new_state.
+                  Typically the output of align_states().
+
+    Returns:
+        New fitted HMMRegimeDetector with reordered means, covars, transmat,
+        and startprob.
+
+    Raises:
+        ValueError: If perm is not a valid permutation of {0, ..., K-1}.
+    """
+    import copy
+
+    K = detector.n_regimes
+    if perm.shape != (K,) or set(perm.tolist()) != set(range(K)):
+        raise ValueError(
+            f"perm must be a valid permutation of {{0,...,{K - 1}}}, got {perm}."
+        )
+
+    new_det = copy.deepcopy(detector)
+    new_det.model.means_    = detector.model.means_[perm]
+    new_det.model.covars_   = detector.model.covars_[perm]
+    A = detector.model.transmat_
+    new_det.model.transmat_ = A[np.ix_(perm, perm)]
+    new_det.model.startprob_ = detector.model.startprob_[perm]
+    new_det.is_fitted = True
+    return new_det
+
 
 class HMMRegimeDetector(BaseRegimeDetector):
     """
@@ -541,3 +674,135 @@ class HMMRegimeDetector(BaseRegimeDetector):
         """
         with open(path, 'rb') as f:
             return pickle.load(f)
+
+
+def fit_best_of_n_seeds(
+    df_train: pd.DataFrame,
+    n_regimes: int,
+    n_init: int,
+    train_end_date: Optional[pd.Timestamp] = None,
+    covariance_type: str = "full",
+    n_iter: int = 500,
+    tol: float = 1e-4,
+    p_stay: float = 0.9,
+    min_regime_share: float = 0.03,
+    feature_names: Optional[list[str]] = None,
+) -> Tuple[HMMRegimeDetector, StandardScaler]:
+    """
+    Fit HMM across n_init seeds and return the best-performing model.
+
+    Seeds are derived as range(n_init) for full reproducibility — all
+    parameters must come from config, never hardcoded at the call site.
+
+    Degeneracy filter: any model where Viterbi hard-label predictions on
+    training data assign fewer than min_regime_share of observations to any
+    single regime is rejected.
+
+    Fallback: if all seeds fail the filter, return the model with highest
+    log-likelihood and emit a WARNING.
+
+    Args:
+        df_train:          In-sample feature DataFrame (DatetimeIndex required).
+        n_regimes:         Number of HMM hidden states.
+        n_init:            Number of seeds to try (set in regime_config.yaml).
+        train_end_date:    IS boundary — forwarded to initialise_emissions().
+        covariance_type:   HMM emission covariance type ('full' or 'diag').
+        n_iter:            Max EM iterations per seed.
+        tol:               EM convergence tolerance per seed.
+        p_stay:            Diagonal element for initial transition matrix.
+        min_regime_share:  Degeneracy filter: minimum fraction for any regime.
+        feature_names:     Stored on the returned detector for interpretability.
+
+    Returns:
+        (best_detector, scaler): Best HMMRegimeDetector and its StandardScaler.
+
+    Raises:
+        RuntimeError: If all n_init seeds fail with exceptions.
+    """
+    # IS boundary is a dataset-level invariant — validate once before the loop
+    # so the error propagates immediately rather than being silently swallowed
+    # and misreported as "all seeds failed with exceptions".
+    if train_end_date is not None and isinstance(df_train.index, pd.DatetimeIndex):
+        train_max = df_train.index.max()
+        if train_max > train_end_date:
+            raise ValueError(
+                "df_train contains out-of-sample dates: max date in df_train is %s "
+                "but train_end_date is %s. Pass only in-sample data to "
+                "fit_best_of_n_seeds()." % (train_max.date(), train_end_date.date())
+            )
+
+    X_raw = df_train.values
+    candidates: list[dict] = []
+
+    for seed in range(n_init):
+        try:
+            means, covs, scaler = initialise_emissions(
+                df_train,
+                n_clusters=n_regimes,
+                random_state=seed,
+                covariance_type=covariance_type,
+                train_end_date=train_end_date,
+            )
+            X_scaled = scaler.transform(X_raw)
+
+            detector = HMMRegimeDetector(
+                n_regimes=n_regimes,
+                covariance_type=covariance_type,
+                n_iter=n_iter,
+                tol=tol,
+                random_state=seed,
+                means=means,
+                covars=covs,
+                transmat=initialise_transitions(n_regimes, p_stay),
+                startprob=initialise_probabilities(n_regimes),
+                feature_names=feature_names,
+            )
+            detector.fit(X_scaled)
+
+            ll = detector.score(X_scaled)
+            labels = detector.predict(X_scaled)
+            _, counts = np.unique(labels, return_counts=True)
+            shares = counts / len(labels)
+            passed = bool(np.min(shares) >= min_regime_share)
+
+            logger.info(
+                "fit_best_of_n_seeds: seed=%d  ll=%.4f  passed=%s  min_share=%.3f",
+                seed, ll, passed, float(np.min(shares)),
+            )
+            candidates.append({
+                "seed": seed,
+                "detector": detector,
+                "scaler": scaler,
+                "ll": ll,
+                "passed_filter": passed,
+            })
+
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "fit_best_of_n_seeds: seed=%d raised %s: %s — skipping.",
+                seed, type(exc).__name__, exc,
+            )
+
+    if not candidates:
+        raise RuntimeError(
+            f"fit_best_of_n_seeds: all {n_init} seeds failed with exceptions. "
+            "Check input data and configuration."
+        )
+
+    passing = [c for c in candidates if c["passed_filter"]]
+    if passing:
+        best = max(passing, key=lambda c: c["ll"])
+        logger.info(
+            "fit_best_of_n_seeds: selected seed=%d (ll=%.4f) from %d/%d passing.",
+            best["seed"], best["ll"], len(passing), len(candidates),
+        )
+    else:
+        best = max(candidates, key=lambda c: c["ll"])
+        logger.warning(
+            "fit_best_of_n_seeds: no seed passed the degeneracy filter "
+            "(min_regime_share=%.3f). Falling back to highest-LL seed=%d (ll=%.4f). "
+            "Consider loosening min_regime_share in regime_config.yaml or inspecting features.",
+            min_regime_share, best["seed"], best["ll"],
+        )
+
+    return best["detector"], best["scaler"]

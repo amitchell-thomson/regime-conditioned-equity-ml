@@ -73,6 +73,38 @@ class RollingStd(BaseTransform):
 
         rolling = series.rolling(window)
         std = rolling.std()
-        
+
         return std # type: ignore
-            
+
+
+class Winsorize(BaseTransform):
+    """
+    Clip a z-scored series to the symmetric interval [-sigma, +sigma].
+
+    Designed to bound extreme tail observations (e.g. VIX spikes, NFCI stress)
+    before HMM fitting. Assumes the input is already standardised (z-scored).
+
+    Parameters:
+        sigma (float): Symmetric clip bound. Must be positive.
+                       Set in regime_universe.yaml — never hardcode this value.
+
+    Staleness behaviour: pointwise clip — correct under both 'strict' and
+    'ignore' staleness modes. Clipping a forward-filled copy of a clipped
+    value is idempotent, so the base class staleness logic handles this
+    without any special treatment.
+    """
+
+    def _validate_params(self) -> None:
+        if "sigma" not in self.params:
+            raise ValueError(
+                "Winsorize requires a 'sigma' parameter (symmetric clip bound). "
+                "Set this in regime_universe.yaml."
+            )
+        if self.params["sigma"] <= 0:
+            raise ValueError(
+                f"Winsorize sigma must be positive, got {self.params['sigma']}."
+            )
+
+    def _compute(self, series: pd.Series) -> pd.Series:
+        sigma = self.params["sigma"]
+        return series.clip(lower=-sigma, upper=sigma)

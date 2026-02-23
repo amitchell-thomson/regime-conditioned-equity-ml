@@ -1,5 +1,12 @@
 train_end_date: "2019-01-01"
 
+# Multi-seed HMM initialization (item 3.1).
+# fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
+# model that passes the degeneracy filter. All values must come from this config.
+hmm:
+  n_init: 10              # Number of seeds to try (range(0, n_init))
+  min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
+
 feature_selection:
   group_pca:
     # Number of principal components to retain per macro group.
@@ -7,7 +14,8 @@ feature_selection:
     # To vary candidate feature counts for HMM selection, use GroupPCATransformer.get_ordered_pc_columns()[:N].
     n_components:
       rates: 2
-      inflation: 2
-      growth: 2
-      employment: 2
-      liquidity: 2
+      inflation: 1
+      growth: 1
+      employment: 1
+      liquidity: 1
+
