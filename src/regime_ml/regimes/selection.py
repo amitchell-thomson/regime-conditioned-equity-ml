@@ -11,22 +11,42 @@ def _get(d: Dict[str, Any], path: str, default=np.nan):
         cur = cur[k]
     return cur
 
-def _range_score(x: float, lo: float, hi: float, slack: float = 0.5) -> float:
-    """
-    Score in [0,1]. Best inside [lo,hi]. Linear decay outside.
-    slack controls decay width as a fraction of band width.
+def _soft_score(
+    x: float, optimal: float, lo: float, hi: float, slack: float = 0.5
+) -> float:
+    """Score in [0, 1]. Returns 1.0 at optimal; decays linearly outward.
+
+    Within [lo, hi]: linear gradient from 0.5 at the boundaries to 1.0 at optimal.
+    Outside [lo, hi]: decays linearly from 0.5 at the boundary to 0.0 at
+    lo − slack·width (or hi + slack·width).
+
+    This replaces the flat-top _range_score which gave 1.0 everywhere inside
+    [lo, hi], making models within the range indistinguishable.
+
+    Args:
+        x:       Metric value to score.
+        optimal: Ideal value — receives score 1.0.
+        lo, hi:  Acceptable range boundaries — receive score 0.5.
+        slack:   Decay width beyond boundaries as fraction of (hi - lo).
     """
     if not np.isfinite(x):
         return 0.0
     width = hi - lo
     if width <= 0:
         return 0.0
+    opt = float(np.clip(optimal, lo, hi))
     s = slack * width
     if lo <= x <= hi:
-        return 1.0
-    if x < lo:
-        return max(0.0, 1.0 - (lo - x) / max(s, 1e-12))
-    return max(0.0, 1.0 - (x - hi) / max(s, 1e-12))
+        if x <= opt:
+            span = opt - lo
+            return float(0.5 + 0.5 * (x - lo) / span) if span > 1e-12 else 1.0
+        else:
+            span = hi - opt
+            return float(0.5 + 0.5 * (hi - x) / span) if span > 1e-12 else 1.0
+    elif x < lo:
+        return float(max(0.0, 0.5 * (x - (lo - s)) / s)) if s > 1e-12 else 0.0
+    else:  # x > hi
+        return float(max(0.0, 0.5 * (hi + s - x) / s)) if s > 1e-12 else 0.0
 
 def select_best_hmm_model(
     results: Dict[str, Any],
@@ -36,8 +56,9 @@ def select_best_hmm_model(
     oos_min_share: float = 0.02,
     oos_max_share: float = 0.85,
     max_implied_duration: float = 3000.0,
-    maha_min_quantile: float = 0.10,   # used to set a data-driven threshold
-    top_n: int = 10
+    maha_min_quantile: float = 0.10,
+    top_n: int = 10,
+    weights: Dict[str, float] | None = None,
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     """
     Returns:
@@ -45,6 +66,19 @@ def select_best_hmm_model(
       leaderboard_df (top_n survivors, with score breakdown),
       rejected_df (model_id + rejection reason)
     """
+    # --- Scoring weights (override via weights kwarg or use defaults)
+    _default_weights = {
+        "macro": 0.25,
+        "transitions": 0.25,
+        "stability": 0.20,
+        "oos": 0.20,
+        "bic": 0.10,
+    }
+    w = {**_default_weights, **(weights or {})}
+    # Normalise in case caller passed unnormalised weights
+    w_total = sum(w.values())
+    w = {k: v / w_total for k, v in w.items()}
+
     rows = []
     for model_id, r in results.items():
         rows.append({
@@ -67,6 +101,9 @@ def select_best_hmm_model(
             "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
 
             "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
+
+            # --- BIC / AIC (complexity penalties)
+            "bic_full": _get(r, "bic_full"),
 
             # --- OOS slice (structural robustness)
             "oos_min_share": _get(r, "out_of_sample.regime_stability.min_regime_share"),
@@ -120,47 +157,70 @@ def select_best_hmm_model(
     if survivors.empty:
         raise ValueError("No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full.")
 
-    # --- Scoring (simple, robust)
-    # Normalize some "higher is better" metrics via ranks (robust to scale)
-    def rrank(s, ascending=False):
+    # --- Scoring
+    # Percentile rank: maps a Series to [0,1] where higher rank = better model
+    def rrank(s: pd.Series, ascending: bool = False) -> pd.Series:
         return s.rank(pct=True, ascending=ascending)
 
-    # Macro score (higher better)
-    macro = 0.5 * rrank(survivors["maha_median"], ascending=True) + 0.5 * rrank(survivors["anova_r2_mean"], ascending=True)
+    # Macro coherence: higher Mahalanobis separation and R² are better
+    macro = (
+        0.5 * rrank(survivors["maha_median"], ascending=True)
+        + 0.5 * rrank(survivors["anova_r2_mean"], ascending=True)
+    )
 
-    # Transition realism: range preferences + penalty
-    dur_score = survivors["median_implied_duration"].apply(lambda x: _range_score(x, 20, 200, slack=0.75)) # type: ignore
-    tv_score = survivors["tv20"].apply(lambda x: _range_score(x, 0.05, 0.30, slack=1.0)) if survivors["tv20"].notna().any() else 0.0 # type: ignore
-    off_pen  = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
+    # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
+    # _soft_score replaces the flat-top _range_score so within-range models are ranked
+    dur_score = survivors["median_implied_duration"].apply(  # type: ignore
+        lambda x: _soft_score(x, optimal=90.0, lo=20.0, hi=200.0, slack=0.75)
+    )
+    tv_score = (
+        survivors["tv20"].apply(lambda x: _soft_score(x, optimal=0.15, lo=0.05, hi=0.30, slack=1.0))  # type: ignore
+        if survivors["tv20"].notna().any()
+        else 0.0
+    )
+    off_pen = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
     trans = 0.45 * dur_score + 0.35 * tv_score + 0.20 * off_pen
 
-    # Stability/usability: less churn, decent persistence, not overly certain
-    churn = rrank(survivors["n_transitions"], ascending=False)  # lower transitions => higher rank
-    pers  = survivors["avg_persistence"].apply(lambda x: _range_score(x, 20, 200, slack=1.0)) # type: ignore
-    ent   = rrank(survivors["entropy_mean"], ascending=True)    # higher entropy => higher rank
+    # Stability: less churn, decent persistence (~90 days), not overly certain
+    churn = rrank(survivors["n_transitions"], ascending=False)
+    pers = survivors["avg_persistence"].apply(  # type: ignore
+        lambda x: _soft_score(x, optimal=90.0, lo=20.0, hi=200.0, slack=1.0)
+    )
+    ent = rrank(survivors["entropy_mean"], ascending=True)
     stab = 0.45 * churn + 0.35 * pers + 0.20 * ent
 
-    # OOS robustness penalty/bonus
-    # Encourage macro coherence not collapsing OOS:
-    if survivors["oos_anova_r2_mean"].notna().any(): # type: ignore
-        oos_macro = rrank(survivors["oos_anova_r2_mean"], ascending=True)
+    # OOS robustness: macro coherence must not collapse out-of-sample
+    oos_macro: pd.Series | float = (
+        rrank(survivors["oos_anova_r2_mean"], ascending=True)
+        if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore
+        else 0.0
+    )
+
+    # BIC: lower is better — normalise within survivors, invert so higher = better
+    bic_vals = survivors["bic_full"]
+    if bic_vals.notna().any():  # type: ignore
+        bic_min, bic_max = float(bic_vals.min()), float(bic_vals.max())
+        bic_score: pd.Series | float = (
+            (bic_max - bic_vals) / (bic_max - bic_min)
+            if bic_max > bic_min
+            else pd.Series(1.0, index=survivors.index)
+        )
     else:
-        oos_macro = 0.0
+        bic_score = 0.0
 
     survivors["macro_score"] = macro
     survivors["transition_score"] = trans
     survivors["stability_score"] = stab
     survivors["oos_macro_score"] = oos_macro
+    survivors["bic_score"] = bic_score
 
     survivors["final_score"] = (
-        0.30 * survivors["macro_score"] +
-        0.25 * survivors["transition_score"] +
-        0.20 * survivors["stability_score"] +
-        0.25 * survivors["oos_macro_score"]
+        w["macro"] * survivors["macro_score"]
+        + w["transitions"] * survivors["transition_score"]
+        + w["stability"] * survivors["stability_score"]
+        + w["oos"] * survivors["oos_macro_score"]
+        + w["bic"] * survivors["bic_score"]
     )
-    # Weights: macro=0.30, transition=0.25, stability=0.20, oos_macro=0.25 → sum=1.00
-    # OOS weight raised from 5% to 25%: OOS coherence is a primary selection signal,
-    # not a decoration. IS-only winners that collapse OOS are excluded by design.
 
     leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True) # type: ignore
     best_model_id = str(leaderboard.loc[0, "model_id"])

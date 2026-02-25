@@ -5,8 +5,8 @@ Usage:
     regime-ml --help
     regime-ml data [--log-level LEVEL]
     regime-ml features [--log-level LEVEL]
-    regime-ml regime [--log-level LEVEL]     # not yet implemented
-    regime-ml all [--log-level LEVEL]        # run data → features in sequence
+    regime-ml regime [--log-level LEVEL]
+    regime-ml all [--log-level LEVEL]        # run data → features → regime in sequence
 """
 
 from __future__ import annotations
@@ -33,9 +33,11 @@ def _register_pipelines() -> None:
     """Lazily import and register pipeline callables to avoid slow imports at parse time."""
     from regime_ml.data.macro.pipeline import run_macro_data_pipeline
     from regime_ml.features.macro.pipeline import run_macro_feature_pipeline
+    from regime_ml.regimes.pipeline import run_regime_pipeline
 
     _PIPELINE_REGISTRY["data"] = ("Macro data pipeline", run_macro_data_pipeline)
     _PIPELINE_REGISTRY["features"] = ("Macro feature pipeline", run_macro_feature_pipeline)
+    _PIPELINE_REGISTRY["regime"] = ("Regime detection pipeline", run_regime_pipeline)
 
 
 def _setup_logging(level: str) -> None:
@@ -80,12 +82,13 @@ def _build_parser() -> argparse.ArgumentParser:
     commands:
     data      Load, clean, align and validate raw macro data
     features  Build transform-chain features from processed macro data
-    regime    Fit and evaluate HMM regime detector (coming soon)
-    all       Run data → features in sequence
+    regime    Fit HMM grid, select best model, label regimes, validate episodes
+    all       Run data → features → regime in sequence
 
     examples:
     regime-ml data
     regime-ml features --log-level DEBUG
+    regime-ml regime
     regime-ml all --log-level WARNING
     """,
     )
@@ -111,12 +114,8 @@ def main() -> None:
     _setup_logging(args.log_level)
     _register_pipelines()
 
-    if args.command == "regime":
-        console.print("[yellow]regime pipeline is not yet implemented.[/yellow]")
-        sys.exit(0)
-
     if args.command == "all":
-        sequence = ["data", "features"]
+        sequence = ["data", "features", "regime"]
     else:
         sequence = [args.command]
 

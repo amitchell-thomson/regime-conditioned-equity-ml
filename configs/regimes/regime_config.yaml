@@ -1,11 +1,45 @@
 train_end_date: "2019-01-01"
 
-# Multi-seed HMM initialization (item 3.1).
+# Multi-seed HMM initialization.
 # fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
 # model that passes the degeneracy filter. All values must come from this config.
 hmm:
   n_init: 10              # Number of seeds to try (range(0, n_init))
   min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
+
+# Grid search over HMM hyperparameters evaluated by compare_hmm_models().
+hmm_grid:
+  n_regimes: [3, 4]
+  covariance_types: ["diag"]
+  p_stay: [0.90, 0.95, 0.99]
+
+# Soft scoring weights for select_best_hmm_model().
+# Must sum to 1.0. Adjust here — never in source code.
+selection:
+  weights:
+    macro: 0.25
+    transitions: 0.25
+    stability: 0.20
+    oos: 0.20
+    bic: 0.10
+
+# Expanding-window cross-validation stability diagnostic.
+# Disabled by default (expensive — each fold refits all grid candidates).
+# Enable for final model validation runs only.
+cross_validation:
+  enabled: false
+  min_train_years: 5
+  fold_step_months: 12
+  oos_window_months: 12
+  max_churn_warning: 0.20   # flag if >20% of Viterbi dates change label across folds
+
+# Output file paths (relative to project root).
+outputs:
+  features_path: "data/features/macro_features_ready.parquet"
+  regime_assignments: "data/regimes/regime_assignments.parquet"
+  model_leaderboard: "data/regimes/model_leaderboard.csv"
+  label_results: "data/regimes/label_results.json"
+  run_metadata: "data/regimes/run_metadata.json"
 
 feature_selection:
   group_pca:

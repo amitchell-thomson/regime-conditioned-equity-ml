@@ -1,0 +1,54 @@
+# Known macro economic episodes for regime label validation.
+#
+# Each episode specifies a date range and the archetype key we expect to
+# dominate. validate_against_episodes() checks what fraction of days in each
+# episode fell in the state assigned to the expected archetype.
+#
+# ANALYSIS ONLY — this file is never read in the fitting path or trading logic.
+# expected_archetype must match a key in regime_archetypes.yaml.
+
+episodes:
+  - name: "Dot-com Bust"
+    start: "2000-03-01"
+    end: "2002-10-31"
+    expected_archetype: "recession"
+
+  - name: "Post Dot-com Recovery"
+    start: "2003-07-01"
+    end: "2004-12-31"
+    expected_archetype: "recovery"
+
+  - name: "GFC 2008-09"
+    start: "2007-10-01"
+    end: "2009-06-30"
+    expected_archetype: "recession"
+
+  - name: "Post-GFC Recovery"
+    start: "2009-07-01"
+    end: "2011-12-31"
+    expected_archetype: "recovery"
+
+  - name: "2013 Taper Tantrum"
+    start: "2013-05-01"
+    end: "2013-12-31"
+    expected_archetype: "policy_constrained"
+
+  - name: "Mid-cycle Expansion 2014-19"
+    start: "2014-01-01"
+    end: "2019-01-01"
+    expected_archetype: "expansion"
+
+  - name: "COVID Crash"
+    start: "2020-02-15"
+    end: "2020-04-30"
+    expected_archetype: "liquidity_crisis"
+
+  - name: "Post-COVID Expansion"
+    start: "2020-06-01"
+    end: "2021-11-30"
+    expected_archetype: "expansion"
+
+  - name: "Inflation Regime 2022"
+    start: "2021-12-01"
+    end: "2023-06-30"
+    expected_archetype: "stagflation"

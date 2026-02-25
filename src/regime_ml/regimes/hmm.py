@@ -598,18 +598,77 @@ class HMMRegimeDetector(BaseRegimeDetector):
     def score(self, X: np.ndarray) -> float:
         """
         Compute log-likelihood of data under the fitted model.
-        
+
         Args:
             X: Features array (T, n_features)
-            
+
         Returns:
-            Log-likelihood score
+            Log-likelihood score (per sample)
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         if X.ndim != 2:
             raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
         return self.model.score(X)
+
+    def _n_params(self) -> int:
+        """Number of free parameters in the fitted HMM.
+
+        Counts:
+          - Initial state probs: K-1 (sums to 1)
+          - Transition matrix: K*(K-1) (each row sums to 1)
+          - Emission means: K*D
+          - Emission covariances: depends on covariance_type
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        K = self.n_regimes
+        D = int(self.model.means_.shape[1])
+        n_base = (K - 1) + K * (K - 1) + K * D
+        cov_type = self.covariance_type
+        if cov_type == "diag":
+            n_cov = K * D
+        elif cov_type == "full":
+            n_cov = K * D * (D + 1) // 2
+        elif cov_type == "spherical":
+            n_cov = K
+        elif cov_type == "tied":
+            n_cov = D * (D + 1) // 2
+        else:
+            n_cov = K * D  # fallback for unknown types
+        return n_base + n_cov
+
+    def bic(self, X: np.ndarray) -> float:
+        """Bayesian Information Criterion.
+
+        BIC = -2 * log_likelihood + n_params * log(n_samples).
+        Lower BIC indicates a better model, penalising unnecessary complexity.
+
+        Args:
+            X: Features array (T, n_features) — must be the same scaled data
+               used for fitting.
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        n = len(X)
+        log_lik = self.score(X) * n  # score() returns per-sample log-likelihood
+        return float(-2.0 * log_lik + self._n_params() * np.log(n))
+
+    def aic(self, X: np.ndarray) -> float:
+        """Akaike Information Criterion.
+
+        AIC = -2 * log_likelihood + 2 * n_params.
+        Lower AIC indicates a better model.
+
+        Args:
+            X: Features array (T, n_features) — must be the same scaled data
+               used for fitting.
+        """
+        if not self.is_fitted:
+            raise ValueError("Model not fitted. Call fit() first.")
+        n = len(X)
+        log_lik = self.score(X) * n
+        return float(-2.0 * log_lik + 2.0 * self._n_params())
     
     def get_transition_matrix(self) -> np.ndarray:
         """

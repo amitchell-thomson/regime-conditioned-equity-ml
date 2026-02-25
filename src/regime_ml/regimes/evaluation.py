@@ -1,9 +1,19 @@
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
+import logging
+from pathlib import Path
 from typing import Dict, Any
+
+import numpy as np
+import pandas as pd
+import yaml
 from scipy import stats as scipy_stats
+from scipy.optimize import linear_sum_assignment
 from sklearn.covariance import LedoitWolf
+
 from regime_ml.data.macro import build_featuregroup_map
+
+logger = logging.getLogger(__name__)
 
 def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
     """
@@ -415,10 +425,22 @@ def compare_hmm_models(
         # OOS window, giving each time-step t access to t+1…T_oos — look-ahead bias.
         macro_coh_oos = evaluate_macro_coherence(X_oos, filt_oos, selected_features, featuregroup_map) if filt_oos is not None else {}
 
+        # BIC / AIC — use scaled data for consistency with the model's training data
+        bic_is = model.bic(X_is) if X_is.shape[0] > 0 else np.nan
+        aic_is = model.aic(X_is) if X_is.shape[0] > 0 else np.nan
+        bic_full = model.bic(X_full_scaled)
+        aic_full = model.aic(X_full_scaled)
+
         results[model_id] = {
             "n_obs_full": int(X_full_scaled.shape[0]),
             "n_obs_is": int(X_is.shape[0]),
             "n_obs_oos": int(X_oos.shape[0]),
+
+            # Complexity penalties
+            "bic_is": bic_is,
+            "aic_is": aic_is,
+            "bic_full": bic_full,
+            "aic_full": aic_full,
 
             # Full-sample (as before)
             "regime_stability": regime_stability_full,
@@ -507,3 +529,288 @@ def equity_metrics_by_regime(
         })
 
     return pd.DataFrame(out).sort_values("ann_return", ascending=False).reset_index(drop=True)
+
+
+def expanding_window_cv(
+    features_df: pd.DataFrame,
+    model_config: Dict[str, Any],
+    hmm_config: Dict[str, Any],
+    cv_config: Dict[str, Any],
+    train_end_date: pd.Timestamp,
+) -> Dict[str, Any]:
+    """Expanding-window cross-validation stability diagnostic.
+
+    Refits the HMM with the given model_config on progressively longer IS
+    windows and evaluates each model on a fixed-width OOS fold. Measures how
+    consistent regime assignments are across folds (label churn) and how
+    stable the OOS macro-coherence metric is (metric_cv_std).
+
+    State alignment across folds uses Euclidean distance between regime means
+    (compatible with all covariance types).
+
+    DIAGNOSTIC ONLY — does not affect model selection. Results are stored in
+    run_metadata.json for post-run inspection.
+
+    Args:
+        features_df:     Full feature DataFrame with DatetimeIndex (PC columns).
+        model_config:    Dict with keys: n_regimes, covariance_type, p_stay.
+        hmm_config:      Dict with keys: n_init, min_regime_share (from regime_config).
+        cv_config:       Dict with keys: min_train_years, fold_step_months,
+                         oos_window_months, max_churn_warning.
+        train_end_date:  IS boundary — folds do not extend beyond this date.
+
+    Returns:
+        Dict with keys:
+          label_churn     float — fraction of overlapping dates with label change
+          metric_cv_std   float — std of OOS ANOVA-R² across folds
+          n_folds         int   — number of complete folds evaluated
+          fold_scores     list[float] — per-fold OOS ANOVA-R²
+          churn_warning   bool  — True if label_churn > max_churn_warning
+    """
+    # Lazy import to avoid circular dependency at module level
+    from regime_ml.regimes.hmm import fit_best_of_n_seeds  # noqa: PLC0415
+
+    min_train_years = int(cv_config.get("min_train_years", 5))
+    fold_step_months = int(cv_config.get("fold_step_months", 12))
+    oos_window_months = int(cv_config.get("oos_window_months", 12))
+    max_churn_warning = float(cv_config.get("max_churn_warning", 0.20))
+
+    n_regimes = int(model_config["n_regimes"])
+    covariance_type = str(model_config.get("covariance_type", "diag"))
+    p_stay = float(model_config.get("p_stay", 0.95))
+    n_init = int(hmm_config.get("n_init", 10))
+    min_regime_share = float(hmm_config.get("min_regime_share", 0.03))
+
+    feature_names = list(features_df.columns)
+    featuregroup_map = build_featuregroup_map(feature_names)
+
+    # Build fold IS-end dates: from min_train_years after data start up to train_end_date
+    data_start = features_df.index[0]
+    first_is_end = data_start + pd.DateOffset(years=min_train_years)
+    fold_ends: list[pd.Timestamp] = []
+    current = first_is_end
+    while current <= train_end_date:
+        fold_ends.append(current)
+        current = current + pd.DateOffset(months=fold_step_months)
+
+    if len(fold_ends) < 2:
+        logger.warning(
+            "expanding_window_cv: fewer than 2 folds available — "
+            "increase data history or reduce min_train_years."
+        )
+        return {
+            "label_churn": np.nan,
+            "metric_cv_std": np.nan,
+            "n_folds": 0,
+            "fold_scores": [],
+            "churn_warning": False,
+        }
+
+    fold_scores: list[float] = []
+    fold_labels: list[np.ndarray] = []  # Viterbi labels per fold on the OOS window
+    ref_detector = None
+
+    for fold_end in fold_ends:
+        oos_end = fold_end + pd.DateOffset(months=oos_window_months)
+        df_is = features_df[features_df.index <= fold_end]
+        df_oos = features_df[(features_df.index > fold_end) & (features_df.index <= oos_end)]
+
+        if len(df_is) < 30 or len(df_oos) < 10:
+            logger.debug("expanding_window_cv: skipping fold %s — insufficient data.", fold_end.date())
+            continue
+
+        try:
+            detector, scaler = fit_best_of_n_seeds(
+                df_is,
+                n_regimes=n_regimes,
+                n_init=n_init,
+                train_end_date=fold_end,
+                covariance_type=covariance_type,
+                p_stay=p_stay,
+                min_regime_share=min_regime_share,
+                feature_names=feature_names,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("expanding_window_cv: fold %s fit failed: %s", fold_end.date(), exc)
+            continue
+
+        X_oos = scaler.transform(df_oos.values)
+
+        # Align states to reference fold using Euclidean distance on means
+        means_cand = detector.model.means_  # (K, d)
+        if ref_detector is None:
+            ref_detector = detector
+            perm = np.arange(n_regimes)
+        else:
+            means_ref = ref_detector.model.means_
+            cost = np.array([
+                [np.linalg.norm(means_cand[i] - means_ref[j]) for j in range(n_regimes)]
+                for i in range(n_regimes)
+            ])
+            _, col_ind = linear_sum_assignment(cost)
+            perm = col_ind
+
+        raw_labels = detector.predict(X_oos)
+        aligned_labels = perm[raw_labels]  # remap to reference ordering
+        fold_labels.append(aligned_labels)
+
+        # OOS macro coherence
+        filt_oos = detector.filter_proba(X_oos)
+        coh = evaluate_macro_coherence(
+            X_oos, filt_oos,
+            feature_names=feature_names,
+            featuregroup_map=featuregroup_map,
+        )
+        fold_scores.append(float(coh.get("anova_r2_mean", np.nan)))
+
+    n_folds = len(fold_scores)
+    if n_folds == 0:
+        return {
+            "label_churn": np.nan,
+            "metric_cv_std": np.nan,
+            "n_folds": 0,
+            "fold_scores": [],
+            "churn_warning": False,
+        }
+
+    # Label churn: fraction of overlapping OOS dates where the label changed
+    # Compare each consecutive fold pair on the common date range
+    churn_fracs: list[float] = []
+    for i in range(1, len(fold_labels)):
+        a, b = fold_labels[i - 1], fold_labels[i]
+        common_len = min(len(a), len(b))
+        if common_len > 0:
+            churn_fracs.append(float(np.mean(a[:common_len] != b[:common_len])))
+
+    label_churn = float(np.mean(churn_fracs)) if churn_fracs else np.nan
+    valid_scores = [s for s in fold_scores if np.isfinite(s)]
+    metric_cv_std = float(np.std(valid_scores)) if len(valid_scores) > 1 else np.nan
+    churn_warning = bool(np.isfinite(label_churn) and label_churn > max_churn_warning)
+
+    if churn_warning:
+        logger.warning(
+            "expanding_window_cv: label_churn=%.3f exceeds threshold %.2f. "
+            "Regime assignments are unstable across window sizes — "
+            "consider adjusting n_regimes or p_stay.",
+            label_churn, max_churn_warning,
+        )
+
+    return {
+        "label_churn": round(label_churn, 4) if np.isfinite(label_churn) else None,
+        "metric_cv_std": round(metric_cv_std, 4) if np.isfinite(metric_cv_std) else None,
+        "n_folds": n_folds,
+        "fold_scores": [round(s, 4) if np.isfinite(s) else None for s in fold_scores],
+        "churn_warning": churn_warning,
+    }
+
+
+_DEFAULT_EPISODES_PATH = (
+    Path(__file__).parent.parent.parent.parent
+    / "configs/regimes/economic_episodes.yaml"
+)
+
+
+def validate_against_episodes(
+    regimes: pd.Series,
+    label_results: list[dict],
+    episodes_path: str | Path | None = None,
+) -> pd.DataFrame:
+    """Validate regime labels against known economic episodes.
+
+    ANALYSIS ONLY — never call in fitting or trading-signal paths.
+
+    For each episode, counts what fraction of days fell in:
+      (a) the state whose archetype_key matches expected_archetype (expected_pct)
+      (b) the overall dominant state (dominant_pct)
+
+    Args:
+        regimes:       pd.Series with DatetimeIndex; integer state indices
+                       (e.g. from model.predict()).
+        label_results: List of dicts from label_regimes() — must include
+                       "state_idx", "archetype_key", "label".
+        episodes_path: Optional override for configs/regimes/economic_episodes.yaml.
+
+    Returns:
+        DataFrame with one row per episode and columns:
+          episode, start, end, expected_archetype,
+          dominant_state, dominant_label, archetype_match,
+          expected_pct, dominant_pct, n_days
+    """
+    ep_path = Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
+    if not ep_path.exists():
+        raise FileNotFoundError(f"economic_episodes.yaml not found at {ep_path}.")
+
+    with open(ep_path, "r") as fh:
+        raw = yaml.safe_load(fh)
+    episodes = raw.get("episodes", [])
+
+    # Build lookup: archetype_key → state_idx
+    key_to_state: dict[str | None, int] = {
+        r["archetype_key"]: r["state_idx"] for r in label_results
+        if r.get("archetype_key") is not None
+    }
+    state_to_label: dict[int, str] = {r["state_idx"]: r["label"] for r in label_results}
+
+    rows: list[dict] = []
+    for ep in episodes:
+        name = str(ep["name"])
+        start = pd.Timestamp(ep["start"])
+        end = pd.Timestamp(ep["end"])
+        expected_key = str(ep["expected_archetype"])
+
+        ep_regimes = regimes[(regimes.index >= start) & (regimes.index <= end)]
+        n_days = len(ep_regimes)
+
+        if n_days == 0:
+            logger.debug("validate_against_episodes: episode '%s' has no regime data — skipping.", name)
+            rows.append({
+                "episode": name,
+                "start": start,
+                "end": end,
+                "expected_archetype": expected_key,
+                "dominant_state": None,
+                "dominant_label": None,
+                "archetype_match": False,
+                "expected_pct": np.nan,
+                "dominant_pct": np.nan,
+                "n_days": 0,
+            })
+            continue
+
+        # Dominant state
+        counts = ep_regimes.value_counts()
+        dominant_state = int(counts.index[0])
+        dominant_pct = float(counts.iloc[0] / n_days)
+        dominant_label = state_to_label.get(dominant_state, f"State {dominant_state}")
+
+        # Expected state
+        expected_state = key_to_state.get(expected_key)
+        if expected_state is not None:
+            expected_count = int((ep_regimes == expected_state).sum())
+            expected_pct = float(expected_count / n_days)
+        else:
+            expected_pct = np.nan
+
+        archetype_match = dominant_state == expected_state if expected_state is not None else False
+
+        rows.append({
+            "episode": name,
+            "start": start,
+            "end": end,
+            "expected_archetype": expected_key,
+            "dominant_state": dominant_state,
+            "dominant_label": dominant_label,
+            "archetype_match": archetype_match,
+            "expected_pct": round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan,
+            "dominant_pct": round(dominant_pct, 3),
+            "n_days": n_days,
+        })
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        n_matched = int(df["archetype_match"].sum())
+        logger.info(
+            "validate_against_episodes: %d/%d episodes matched expected archetype.",
+            n_matched, len(df),
+        )
+    return df

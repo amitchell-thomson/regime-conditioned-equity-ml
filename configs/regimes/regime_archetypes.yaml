@@ -1,0 +1,71 @@
+# Regime archetype pool for dynamic labeling.
+#
+# Each archetype defines a signature vector over the 5 macro groups:
+#   rates, inflation, growth, liquidity, employment
+#
+# Signatures are expressed as approximate Z-score deviations from the
+# cross-state mean. Positive = elevated, negative = depressed.
+# The labeling algorithm uses cosine similarity to match detected HMM states
+# to archetypes via linear assignment (no archetype assigned to two states).
+#
+# Thresholds control when a label is assigned vs flagged as unclassified.
+# Tune here — never in source code.
+
+label_config:
+  min_confidence: 0.45   # min cosine similarity for a named label
+  min_margin: 0.08       # min (best_score - runner_up_score) to confirm assignment
+
+archetypes:
+  expansion:
+    display_name: "Risk On - Expansion"
+    signatures:
+      growth: 1.5
+      employment: 0.8
+      liquidity: 1.0
+      inflation: -0.3
+      rates: -0.4
+
+  stagflation:
+    display_name: "Risk On - Stagflation"
+    signatures:
+      inflation: 1.5
+      growth: -0.9
+      rates: 0.5
+      liquidity: -0.5
+      employment: -0.3
+
+  policy_constrained:
+    display_name: "Policy-Constrained Growth"
+    signatures:
+      rates: 1.4
+      inflation: 1.0
+      growth: 0.3
+      liquidity: -0.6
+      employment: -0.1
+
+  recession:
+    display_name: "Risk Off - Recession"
+    signatures:
+      growth: -1.8
+      employment: -0.8
+      liquidity: -1.2
+      inflation: 0.1
+      rates: -0.3
+
+  recovery:
+    display_name: "Recovery"
+    signatures:
+      growth: 0.9
+      employment: 0.4
+      liquidity: 0.6
+      inflation: -0.2
+      rates: -0.6
+
+  liquidity_crisis:
+    display_name: "Liquidity Crisis"
+    signatures:
+      liquidity: -1.8
+      growth: -0.7
+      employment: -0.4
+      inflation: -0.3
+      rates: -0.2
