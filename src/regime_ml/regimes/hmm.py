@@ -1,5 +1,5 @@
+import json
 import logging
-import pickle
 from pathlib import Path
 from typing import Optional, Tuple, Dict
 
@@ -89,8 +89,8 @@ def initialise_emissions(
         # Still fit scaler for consistency (identity transform)
         scaler.fit(X_train)
 
-    # Attach training date range to scaler for audit/inspection
-    scaler._regime_ml_train_date_range = _train_date_range  # type: ignore[attr-defined]
+    # Attach training date range to scaler for audit/inspection.
+    scaler._regime_ml_train_date_range = _train_date_range  # type: ignore[attr-defined]  # custom audit attr on sklearn StandardScaler — intentional
     
     # Fit k-means
     kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
@@ -706,33 +706,119 @@ class HMMRegimeDetector(BaseRegimeDetector):
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted.")
-        return self.model.covars_ # type: ignore
+        return self.model.covars_  # type: ignore[return-value]  # hmmlearn covars_ type varies by covariance_type; always ndarray
     
     def save(self, path: Path) -> None:
-        """
-        Save fitted model to pickle file.
-        
+        """Save fitted model parameters to a directory.
+
+        Creates a directory at ``path`` containing:
+        - ``metadata.json`` — Python-native attributes (n_regimes, covariance_type, etc.)
+        - ``transmat.npy``, ``startprob.npy``, ``means.npy``, ``covars.npy`` — model arrays
+        - ``scaler_mean.npy``, ``scaler_scale.npy`` — scaler parameters (if scaler attached)
+
+        This format is safe across Python/library version changes. Use ``load()`` to
+        reconstruct a fully fitted detector from these files.
+
         Args:
-            path: File path to save model
+            path: Directory path. Created if it does not exist.
+
+        Raises:
+            ValueError: If the model has not been fitted.
         """
+        import numpy as np
+
         if not self.is_fitted:
             raise ValueError("Cannot save unfitted model. Call fit() first.")
-        with open(path, 'wb') as f:
-            pickle.dump(self, f)
-    
+
+        save_dir = Path(path)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        metadata = {
+            "n_regimes": self.n_regimes,
+            "covariance_type": self.covariance_type,
+            "n_iter": self.n_iter,
+            "tol": self.tol,
+            "random_state": self.random_state,
+        }
+        with open(save_dir / "metadata.json", "w") as fh:
+            json.dump(metadata, fh, indent=2)
+
+        np.save(save_dir / "transmat.npy", self.model.transmat_)
+        np.save(save_dir / "startprob.npy", self.model.startprob_)
+        np.save(save_dir / "means.npy", self.model.means_)
+        np.save(save_dir / "covars.npy", self.model._covars_)  # type: ignore[attr-defined]  # internal format: (K,D) for diag, (K,D,D) for full
+
+        if self.scaler is not None:
+            np.save(save_dir / "scaler_mean.npy", self.scaler.mean_)
+            np.save(save_dir / "scaler_scale.npy", self.scaler.scale_)
+
+        logger.info("HMMRegimeDetector.save: wrote parameters to %s", save_dir)
+
     @classmethod
-    def load(cls, path: Path) -> 'HMMRegimeDetector':
-        """
-        Load fitted model from pickle file.
-        
+    def load(cls, path: Path) -> "HMMRegimeDetector":
+        """Load a fitted model from a parameter directory produced by ``save()``.
+
+        Reconstructs the detector by reading metadata.json and the numpy arrays.
+        The returned instance is fully fitted and ready for ``predict()`` /
+        ``filter_proba()`` / ``smooth_proba()``.
+
         Args:
-            path: File path to load model from
-            
+            path: Directory path written by ``save()``.
+
         Returns:
-            Loaded HMMRegimeDetector instance
+            Fitted HMMRegimeDetector instance.
+
+        Raises:
+            FileNotFoundError: If ``path`` does not exist or is missing expected files.
         """
-        with open(path, 'rb') as f:
-            return pickle.load(f)
+        import numpy as np
+        from sklearn.preprocessing import StandardScaler
+
+        save_dir = Path(path)
+        if not save_dir.is_dir():
+            raise FileNotFoundError(f"Model directory not found: {save_dir}")
+
+        with open(save_dir / "metadata.json") as fh:
+            metadata = json.load(fh)
+
+        detector = cls(
+            n_regimes=metadata["n_regimes"],
+            covariance_type=metadata["covariance_type"],
+            n_iter=metadata["n_iter"],
+            tol=metadata["tol"],
+            random_state=metadata.get("random_state"),
+        )
+        # Build the internal GaussianHMM and restore learned parameters
+        detector.model = hmm.GaussianHMM(
+            n_components=metadata["n_regimes"],
+            covariance_type=metadata["covariance_type"],
+            n_iter=metadata["n_iter"],
+            tol=metadata["tol"],
+        )
+        detector.model.transmat_ = np.load(save_dir / "transmat.npy")
+        detector.model.startprob_ = np.load(save_dir / "startprob.npy")
+        means = np.load(save_dir / "means.npy")
+        detector.model.means_ = means
+        # n_features_in_ is sklearn convention; n_features is hmmlearn's internal attr
+        # used by covars_ property getter to expand diag format. Both must be set.
+        detector.model.n_features_in_ = means.shape[1]
+        detector.model.n_features = means.shape[1]  # type: ignore[attr-defined]  # hmmlearn internal — needed by covars_ property getter
+        # Use the private _covars_ attribute to bypass hmmlearn's setter validation.
+        # save() stores _covars_ (internal format): (K,D) for diag, (K,D,D) for full.
+        detector.model._covars_ = np.load(save_dir / "covars.npy")  # type: ignore[attr-defined]  # hmmlearn private attribute — bypasses covariance-type validation on load
+
+        scaler_mean_path = save_dir / "scaler_mean.npy"
+        if scaler_mean_path.exists():
+            scaler = StandardScaler()
+            scaler.mean_ = np.load(scaler_mean_path)
+            scaler.scale_ = np.load(save_dir / "scaler_scale.npy")
+            scaler.n_features_in_ = scaler.mean_.shape[0]
+            scaler.var_ = scaler.scale_ ** 2
+            detector.scaler = scaler
+
+        detector.is_fitted = True
+        logger.info("HMMRegimeDetector.load: loaded parameters from %s", save_dir)
+        return detector
 
 
 def fit_best_of_n_seeds(

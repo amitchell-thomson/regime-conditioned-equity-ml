@@ -62,7 +62,7 @@ class BaseTransform(ABC):
         if staleness_mode == "strict" and is_new_data is not None:
             # compute on actual data points
             actual_data = series[is_new_data.astype(bool)]
-            result = self._compute(actual_data) # type: ignore
+            result = self._compute(actual_data)  # type: ignore[assignment]  # abstract _compute declared as pd.Series; subclass return type not narrowed by mypy
 
             # forward-fill to original index
             result = result.reindex(series.index).ffill()

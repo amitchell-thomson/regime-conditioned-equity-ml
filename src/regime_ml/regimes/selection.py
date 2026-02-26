@@ -59,6 +59,7 @@ def select_best_hmm_model(
     maha_min_quantile: float = 0.10,
     top_n: int = 10,
     weights: Dict[str, float] | None = None,
+    soft_score_cfg: Dict[str, Any] | None = None,
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     """
     Returns:
@@ -86,7 +87,7 @@ def select_best_hmm_model(
 
             # --- FULL sample
             "tv_valid": bool(_get(r, "transition_matrix_sanity.tv_distance_valid", False)),
-            "tv20": _get(r, "transition_matrix_sanity.tv_distance_20d"),
+            "tv20": _get(r, "transition_matrix_sanity.tv_distance"),
             "max_implied_duration": _get(r, "transition_matrix_sanity.max_implied_duration"),
             "median_implied_duration": _get(r, "transition_matrix_sanity.median_implied_duration"),
             "max_offdiag": _get(r, "transition_matrix_sanity.max_offdiag_transition"),
@@ -146,16 +147,27 @@ def select_best_hmm_model(
     reject(df["maha_min"] < maha_thresh, f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)")
 
     # OOS robustness: dead/collapsed regimes OOS signal overfitting to the training period.
-    if df["oos_min_share"].notna().any(): # type: ignore
+    if df["oos_min_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
         reject(df["oos_min_share"] < oos_min_share, f"OOS dead regime (oos_min_share < {oos_min_share})")
-    if df["oos_max_share"].notna().any(): # type: ignore
+    if df["oos_max_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
         reject(df["oos_max_share"] > oos_max_share, f"OOS collapsed regime (oos_max_share > {oos_max_share})")
 
     survivors = df[keep_mask].copy()
-    rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id","reason"]) # type: ignore
+    rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id", "reason"])  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
 
     if survivors.empty:
         raise ValueError("No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full.")
+
+    # --- Soft-score bounds (from config, with defaults matching regime_config.yaml)
+    _default_ss: Dict[str, Any] = {
+        "duration":    {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 0.75},
+        "turnover":    {"optimal": 0.15, "lo": 0.05, "hi": 0.30,  "slack": 1.0},
+        "persistence": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 1.0},
+    }
+    _cfg_ss: Dict[str, Any] = soft_score_cfg or {}
+    ss: Dict[str, Any] = {
+        k: {**_default_ss[k], **_cfg_ss.get(k, {})} for k in _default_ss
+    }
 
     # --- Scoring
     # Percentile rank: maps a Series to [0,1] where higher rank = better model
@@ -170,11 +182,11 @@ def select_best_hmm_model(
 
     # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
     # _soft_score replaces the flat-top _range_score so within-range models are ranked
-    dur_score = survivors["median_implied_duration"].apply(  # type: ignore
-        lambda x: _soft_score(x, optimal=90.0, lo=20.0, hi=200.0, slack=0.75)
+    dur_score = survivors["median_implied_duration"].apply(  # type: ignore[arg-type]
+        lambda x: _soft_score(x, **ss["duration"])
     )
     tv_score = (
-        survivors["tv20"].apply(lambda x: _soft_score(x, optimal=0.15, lo=0.05, hi=0.30, slack=1.0))  # type: ignore
+        survivors["tv20"].apply(lambda x: _soft_score(x, **ss["turnover"]))  # type: ignore[arg-type]
         if survivors["tv20"].notna().any()
         else 0.0
     )
@@ -183,8 +195,8 @@ def select_best_hmm_model(
 
     # Stability: less churn, decent persistence (~90 days), not overly certain
     churn = rrank(survivors["n_transitions"], ascending=False)
-    pers = survivors["avg_persistence"].apply(  # type: ignore
-        lambda x: _soft_score(x, optimal=90.0, lo=20.0, hi=200.0, slack=1.0)
+    pers = survivors["avg_persistence"].apply(  # type: ignore[arg-type]
+        lambda x: _soft_score(x, **ss["persistence"])
     )
     ent = rrank(survivors["entropy_mean"], ascending=True)
     stab = 0.45 * churn + 0.35 * pers + 0.20 * ent
@@ -192,13 +204,13 @@ def select_best_hmm_model(
     # OOS robustness: macro coherence must not collapse out-of-sample
     oos_macro: pd.Series | float = (
         rrank(survivors["oos_anova_r2_mean"], ascending=True)
-        if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore
+        if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
         else 0.0
     )
 
     # BIC: lower is better — normalise within survivors, invert so higher = better
     bic_vals = survivors["bic_full"]
-    if bic_vals.notna().any():  # type: ignore
+    if bic_vals.notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow type
         bic_min, bic_max = float(bic_vals.min()), float(bic_vals.max())
         bic_score: pd.Series | float = (
             (bic_max - bic_vals) / (bic_max - bic_min)
@@ -222,7 +234,7 @@ def select_best_hmm_model(
         + w["bic"] * survivors["bic_score"]
     )
 
-    leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True) # type: ignore
+    leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow
     best_model_id = str(leaderboard.loc[0, "model_id"])
 
     return best_model_id, leaderboard, rejected_df

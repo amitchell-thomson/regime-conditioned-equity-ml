@@ -14,11 +14,57 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from regime_ml.features.macro.group_pca import GroupPCATransformer
 
 logger = logging.getLogger(__name__)
+
+
+def _check_cross_group_correlation(
+    pc_features: pd.DataFrame,
+    train_end_date: str,
+    warn_threshold: float,
+) -> None:
+    """Warn if any cross-group PC pair exceeds the correlation threshold on IS data.
+
+    PCA makes within-group features orthogonal by construction, but two PCs from
+    different macro groups can still be highly correlated. High cross-group correlation
+    signals redundancy between groups that may reduce regime discriminability.
+
+    This check is non-blocking (warning only) — correlated PCs may have distinct
+    economic interpretations even when statistically correlated.
+
+    Args:
+        pc_features:    Full PC DataFrame (IS + OOS). Correlation is computed on IS only.
+        train_end_date: IS/OOS boundary string. Rows with index <= this date are used.
+        warn_threshold: Warn if any absolute Pearson correlation exceeds this value.
+    """
+    is_mask = pc_features.index <= pd.Timestamp(train_end_date)
+    is_data = pc_features.loc[is_mask]
+
+    if is_data.shape[0] < 2 or is_data.shape[1] < 2:
+        return
+
+    corr = is_data.corr().abs()
+    np.fill_diagonal(corr.values, 0.0)
+
+    cols = list(corr.columns)
+    pairs = [
+        (c1, c2, float(corr.loc[c1, c2]))
+        for i, c1 in enumerate(cols)
+        for c2 in cols[i + 1:]
+        if corr.loc[c1, c2] > warn_threshold
+    ]
+    if pairs:
+        logger.warning(
+            "Cross-group PC correlation exceeds %.2f for %d pair(s): %s. "
+            "Consider reviewing group definitions or increasing n_components.",
+            warn_threshold,
+            len(pairs),
+            [(c1, c2, f"{r:.3f}") for c1, c2, r in pairs],
+        )
 
 
 def select_features(
@@ -73,5 +119,13 @@ def select_features(
         n_pcs,
         list(pc_features.columns),
     )
+
+    # Check for high cross-group PC correlation (non-blocking warning).
+    corr_cfg = (
+        regime_cfg.get("feature_selection", {})
+        .get("cross_group_correlation", {})
+    )
+    warn_threshold = float(corr_cfg.get("warn_threshold", 0.80))
+    _check_cross_group_correlation(pc_features, train_end_date, warn_threshold)
 
     return pc_features, transformer

@@ -111,17 +111,25 @@ def _fit_grid(
     return models
 
 
-def run_regime_pipeline() -> Dict[str, Any]:
+def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     """Run the full regime detection pipeline.
 
     Reads macro_features_ready.parquet, fits an HMM grid, selects the best
     model, labels regimes, validates against known economic episodes, and
     writes all output artifacts to disk.
 
+    Args:
+        log_dir: Optional directory for a timestamped pipeline log file.
+                 When supplied, ``configure_pipeline_logging(log_dir)`` is
+                 called at the start so all regime_ml log output is persisted.
+
     Returns:
         Summary dict with keys: best_model_id, n_regimes, bic, final_score,
         n_matched_episodes, output_paths.
     """
+    if log_dir is not None:
+        from regime_ml.utils.logging import configure_pipeline_logging
+        configure_pipeline_logging(log_dir)
     cfg = load_configs()
     regime_cfg: dict = cfg.get("regimes", {})
 
@@ -131,6 +139,7 @@ def run_regime_pipeline() -> Dict[str, Any]:
     cv_cfg: dict = regime_cfg.get("cross_validation", {})
     outputs_cfg: dict = regime_cfg.get("outputs", {})
     sel_weights: dict | None = regime_cfg.get("selection", {}).get("weights")
+    soft_score_cfg: dict | None = regime_cfg.get("selection", {}).get("soft_score")
 
     # --- 1. Load features
     features_path = _resolve(outputs_cfg.get("features_path", "data/features/macro_features_ready.parquet"))
@@ -142,6 +151,12 @@ def run_regime_pipeline() -> Dict[str, Any]:
         )
     features_df = pd.read_parquet(features_path)
     logger.info("run_regime_pipeline: features shape %s, columns: %s", features_df.shape, list(features_df.columns))
+
+    # SHA-256 fingerprint of the feature data — changes if upstream FRED data is updated.
+    features_hash = hashlib.sha256(
+        pd.util.hash_pandas_object(features_df, index=True).values.tobytes()
+    ).hexdigest()[:16]
+    logger.info("run_regime_pipeline: features_hash=%s", features_hash)
 
     feature_names = list(features_df.columns)
 
@@ -166,7 +181,7 @@ def run_regime_pipeline() -> Dict[str, Any]:
 
     # --- 5. Select best model
     best_model_id, leaderboard_df, rejected_df = select_best_hmm_model(
-        results, weights=sel_weights
+        results, weights=sel_weights, soft_score_cfg=soft_score_cfg
     )
     best_row = leaderboard_df.iloc[0]
     best_model_data = models[best_model_id]
@@ -241,6 +256,7 @@ def run_regime_pipeline() -> Dict[str, Any]:
     run_metadata: Dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "config_hash": _config_hash(regime_cfg),
+        "features_hash": features_hash,
         "best_model_id": best_model_id,
         "n_regimes": int(best_model_data["n_regimes"]),
         "covariance_type": str(best_model_data["covariance_type"]),

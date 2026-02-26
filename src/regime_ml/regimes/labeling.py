@@ -3,7 +3,7 @@
 Algorithm:
   1. Load archetype pool from configs/regimes/regime_archetypes.yaml.
   2. Compute per-state weighted group Z-scores from the feature matrix.
-  3. Build a cosine-similarity score matrix (n_states × n_archetypes).
+  3. Build a cosine-similarity score matrix (n_states x n_archetypes).
   4. Solve the linear assignment problem so no archetype is used twice.
   5. Apply confidence + margin thresholds — states that fall short are
      labelled "Unclassified Regime {k}" with the top-2 candidates noted.
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
 import numpy as np
 import yaml

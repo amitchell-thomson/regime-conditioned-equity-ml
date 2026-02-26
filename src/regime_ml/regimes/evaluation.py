@@ -12,6 +12,7 @@ from scipy.optimize import linear_sum_assignment
 from sklearn.covariance import LedoitWolf
 
 from regime_ml.data.macro import build_featuregroup_map
+from regime_ml.utils.config import load_configs
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,7 @@ def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
         "max_offdiag_transition": float(off.max()),
         "mean_row_entropy": float(np.mean(row_entropy)),
         "tv_distance_valid": bool(stationary_valid),
-        f"tv_distance_{n_mix}d": tv_mean,
+        "tv_distance": tv_mean,  # horizon controlled by n_mix parameter
     }
 
 def evaluate_macro_coherence(
@@ -356,6 +357,12 @@ def compare_hmm_models(
       }
     """
 
+    # Read n_mix horizon from config (evaluation.transmat_sanity.n_mix).
+    _regime_cfg = load_configs().get("regimes", {})
+    n_mix: int = int(
+        _regime_cfg.get("evaluation", {}).get("transmat_sanity", {}).get("n_mix", 20)
+    )
+
     # Build global group map once (for all possible features)
     global_group_map = build_featuregroup_map(list(features.columns))
 
@@ -405,7 +412,7 @@ def compare_hmm_models(
         # --- Metrics (FULL)
         regime_stability_full = evaluate_regime_stability(regimes_full)
         entropy_balance_full = evaluate_entropy_balance(filt_full)
-        trans_sanity = evaluate_transmat_sanity(model.get_transition_matrix(), n_mix=20)
+        trans_sanity = evaluate_transmat_sanity(model.get_transition_matrix(), n_mix=n_mix)
         macro_coh_full = evaluate_macro_coherence(
             X_full_scaled, smooth_full,
             feature_names=selected_features,

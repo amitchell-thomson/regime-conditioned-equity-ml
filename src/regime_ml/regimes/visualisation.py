@@ -104,7 +104,7 @@ def plot_regime_timeseries(
         )
     
     # Add horizontal line at y=0 for reference
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=2, col=1) # type: ignore
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5, row=2, col=1)  # type: ignore[call-arg]  # plotly add_hline row/col kwargs not in stubs
     
     # 3. Regime probabilities (stacked area)
     for i in range(proba.shape[1]):
@@ -430,8 +430,8 @@ def create_regime_summary_table(
     # Create means dataframe
     means_df = pd.DataFrame(
         regime_means,
-        columns=feature_names,  # type: ignore
-        index=[regime_names[i] for i in range(n_regimes)]  # type: ignore
+        columns=feature_names,  # type: ignore[arg-type]  # pandas DataFrame columns accepts list[str] — mypy cannot narrow from list[str] | None
+        index=[regime_names[i] for i in range(n_regimes)]  # type: ignore[index]  # dict subscript — mypy cannot narrow from dict[int, str]
     )
     
     # Add regime statistics
@@ -442,7 +442,6 @@ def create_regime_summary_table(
     means_df['Percentage'] = means_df['Observations'] / len(regimes) * 100
     
     # Calculate persistence
-    regime_lengths = []
     current_regime = regimes[0]
     current_length = 1
     regime_duration_map = {i: [] for i in range(n_regimes)}
@@ -502,37 +501,37 @@ def plot_ticker_by_regime(
     
     # Set date range
     if start_date is None:
-        start_date = regime_index.min().strftime('%Y-%m-%d')  # type: ignore
+        start_date = regime_index.min().strftime('%Y-%m-%d')  # type: ignore[union-attr]  # DatetimeIndex.min() returns Timestamp; mypy infers Index scalar
     if end_date is None:
-        end_date = regime_index.max().strftime('%Y-%m-%d')  # type: ignore
+        end_date = regime_index.max().strftime('%Y-%m-%d')  # type: ignore[union-attr]  # DatetimeIndex.max() returns Timestamp; mypy infers Index scalar
     
     if title is None:
         title = f"{ticker} Price by Regime"
     
     # Download ticker data
     logger.info("Downloading %s data from %s to %s...", ticker, start_date, end_date)
-    ticker_data = yf.download(ticker, start=start_date, end=end_date, progress=False)  # type: ignore
+    ticker_data = yf.download(ticker, start=start_date, end=end_date, progress=False)  # type: ignore[attr-defined]  # yfinance has no published type stubs
 
-    if ticker_data.empty:  # type: ignore
+    if ticker_data.empty:  # type: ignore[union-attr]  # yfinance return type is Any; .empty access not narrowed
         raise ValueError(f"No data downloaded for ticker {ticker}")
 
     # Handle MultiIndex columns (yfinance sometimes returns these)
-    if isinstance(ticker_data.columns, pd.MultiIndex):  # type: ignore
-        ticker_data.columns = ticker_data.columns.get_level_values(0)  # type: ignore
+    if isinstance(ticker_data.columns, pd.MultiIndex):  # type: ignore[union-attr]  # yfinance return type is Any
+        ticker_data.columns = ticker_data.columns.get_level_values(0)  # type: ignore[union-attr]  # yfinance return type is Any
 
     # Ensure we have the requested price type
-    if price_type not in ticker_data.columns:  # type: ignore
+    if price_type not in ticker_data.columns:  # type: ignore[union-attr]  # yfinance return type is Any
         logger.warning("Price type %s not found for %s, using Close instead", price_type, ticker)
         price_type = 'Close'
-    
+
     # Create regime dataframe
     regime_df = pd.DataFrame({
         'regime': regimes,
         'regime_name': [regime_names[r] for r in regimes]
     }, index=regime_index)
-    
+
     # Align ticker data with regime data (forward fill regimes to match ticker dates)
-    combined = ticker_data[[price_type]].copy()  # type: ignore
+    combined = ticker_data[[price_type]].copy()  # type: ignore[index]  # yfinance return type is Any; list subscript not narrowed
     combined = combined.join(regime_df, how='left')
     
     # Forward fill regimes for dates that fall between regime classification dates

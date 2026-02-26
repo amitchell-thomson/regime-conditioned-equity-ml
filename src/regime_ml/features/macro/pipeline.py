@@ -196,8 +196,8 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     logger.info("Saved PC features to: %s", selected_output_path)
     logger.info("Saved PCA loadings to: %s", loadings_dir)
 
-    # Create feature metadata (based on PC columns)
-    create_feature_metadata(pc_features, frequency_map)  # type: ignore
+    # Create feature metadata (based on PC columns). Return value unused.
+    _ = create_feature_metadata(pc_features, frequency_map)
 
     return feature_data
 

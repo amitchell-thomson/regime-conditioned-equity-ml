@@ -5,7 +5,7 @@ Usage:
     regime-ml --help
     regime-ml data [--log-level LEVEL]
     regime-ml features [--log-level LEVEL]
-    regime-ml regime [--log-level LEVEL]
+    regime-ml regime [--log-level LEVEL] [--log-dir DIR]
     regime-ml all [--log-level LEVEL]        # run data → features → regime in sequence
 """
 
@@ -55,12 +55,12 @@ def _setup_logging(level: str) -> None:
             logging.getLogger(noisy).setLevel(logging.ERROR)
 
 
-def _run_pipeline(name: str, fn: Callable, log_level: str) -> int:
+def _run_pipeline(name: str, fn: Callable, log_level: str, **kwargs) -> int:
     """Run a single pipeline function, printing a header and timing info. Returns exit code."""
     console.print(Panel(Text(name, style="bold cyan"), expand=False))
     start = time.perf_counter()
     try:
-        result = fn()
+        result = fn(**kwargs)
         elapsed = time.perf_counter() - start
         console.print(f"[green]✓[/green] {name} completed in [bold]{elapsed:.1f}s[/bold]")
         if result is not None and hasattr(result, "shape"):
@@ -104,6 +104,12 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="LEVEL",
         help=f"Logging verbosity: {', '.join(_LOG_LEVELS)} (default: INFO)",
     )
+    parser.add_argument(
+        "--log-dir",
+        default=None,
+        metavar="DIR",
+        help="Write a timestamped pipeline log file to DIR (regime command only).",
+    )
     return parser
 
 
@@ -122,7 +128,11 @@ def main() -> None:
     exit_code = 0
     for step in sequence:
         name, fn = _PIPELINE_REGISTRY[step]
-        code = _run_pipeline(name, fn, args.log_level)
+        kwargs = {}
+        if step == "regime" and args.log_dir is not None:
+            from pathlib import Path
+            kwargs["log_dir"] = Path(args.log_dir)
+        code = _run_pipeline(name, fn, args.log_level, **kwargs)
         if code != 0:
             exit_code = code
             break  # stop on first failure

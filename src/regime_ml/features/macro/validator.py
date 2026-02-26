@@ -186,8 +186,8 @@ class MacroFeatureValidator:
                 )
 
                 # Check alignment with master calendar
-                index_set = set(self.df.index.normalize())  # type: ignore
-                expected_set = set(expected_calendar.normalize())  # type: ignore
+                index_set = set(self.df.index.normalize())  # type: ignore[attr-defined]  # DatetimeIndex.normalize() not in pandas stubs for all Index types
+                expected_set = set(expected_calendar.normalize())  # type: ignore[attr-defined]  # DatetimeIndex.normalize() not in pandas stubs for all Index types
 
                 missing_dates = expected_set - index_set
                 extra_dates = index_set - expected_set
@@ -268,10 +268,10 @@ class MacroFeatureValidator:
                 first_complete_idx = df_clean.index.min()
                 first_idx = self.df.index.min()
 
-                if pd.notna(first_complete_idx) and pd.notna(first_idx):  # type: ignore
+                if pd.notna(first_complete_idx) and pd.notna(first_idx):  # type: ignore[arg-type]  # pd.notna accepts Index scalars; mypy does not narrow from Index.min()
                     try:
-                        burn_in_timedelta = first_complete_idx - first_idx  # type: ignore
-                        burn_in_days = burn_in_timedelta.days if hasattr(burn_in_timedelta, 'days') else 0  # type: ignore
+                        burn_in_timedelta = first_complete_idx - first_idx  # type: ignore[operator]  # Timestamp subtraction; mypy cannot infer return type from Index.min()
+                        burn_in_days = burn_in_timedelta.days if hasattr(burn_in_timedelta, 'days') else 0  # type: ignore[union-attr]  # timedelta .days access; union-typed after subtraction
                         burn_in_years = burn_in_days / 365.25
 
                         logger.info("  First complete row: %s", first_complete_idx)

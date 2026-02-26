@@ -112,7 +112,7 @@ def trim_to_common_start(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("Trimming to common start date: %s", latest_start_date.date())
 
     # Filter to start from that date
-    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True)  # type: ignore
+    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True)  # type: ignore[index]  # pandas boolean indexing — mypy cannot narrow DataFrame.__getitem__ from Series[bool]
 
     rows_removed = len(df) - len(result)
     logger.info("Removed %d dates per series", int(rows_removed / df['series_code'].nunique()))

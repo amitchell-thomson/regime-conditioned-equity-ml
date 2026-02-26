@@ -154,7 +154,7 @@ def validate_data(
 
     # Check sorting
     is_sorted = df[['series_code', 'date']].equals(
-        df[['series_code', 'date']].sort_values(['series_code', 'date']).reset_index(drop=True)  # type: ignore
+        df[['series_code', 'date']].sort_values(['series_code', 'date']).reset_index(drop=True)  # type: ignore[index]  # pandas boolean/multi-col indexing — mypy cannot narrow DataFrame.__getitem__
     )
     report["statistics"]["is_sorted"] = is_sorted
 
@@ -198,7 +198,7 @@ def validate_data(
                 "start": series_df['date'].min().strftime("%Y-%m-%d"),
                 "end": series_df['date'].max().strftime("%Y-%m-%d")
             },
-            "null_values": int(series_df['value'].isnull().sum()),  # type: ignore
+            "null_values": int(series_df['value'].isnull().sum()),  # type: ignore[call-overload]  # pandas Series.isnull().sum() — mypy cannot narrow int() conversion
             "value_range": {
                 "min": float(series_df['value'].min()),
                 "max": float(series_df['value'].max())
@@ -212,7 +212,7 @@ def validate_data(
             series_report["forward_filled_points"] = len(series_df) - int(new_data_count)
 
             if 'native_frequency' in series_df.columns:
-                series_report["native_frequency"] = series_df['native_frequency'].iloc[0]  # type: ignore
+                series_report["native_frequency"] = series_df['native_frequency'].iloc[0]  # type: ignore[index]  # pandas Series.iloc[0] — mypy cannot infer scalar return type
 
         # Check for constant values (zero variance)
         if series_df['value'].std() == 0:

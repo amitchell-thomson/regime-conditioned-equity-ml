@@ -4,14 +4,14 @@ train_end_date: "2019-01-01"
 # fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
 # model that passes the degeneracy filter. All values must come from this config.
 hmm:
-  n_init: 10              # Number of seeds to try (range(0, n_init))
+  n_init: 25              # Number of seeds to try (range(0, n_init))
   min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
 
 # Grid search over HMM hyperparameters evaluated by compare_hmm_models().
 hmm_grid:
   n_regimes: [3, 4]
-  covariance_types: ["diag"]
-  p_stay: [0.90, 0.95, 0.99]
+  covariance_types: ["diag", "full"]
+  p_stay: [0.90, 0.95, 0.99, 0.995]
 
 # Soft scoring weights for select_best_hmm_model().
 # Must sum to 1.0. Adjust here — never in source code.
@@ -27,7 +27,7 @@ selection:
 # Disabled by default (expensive — each fold refits all grid candidates).
 # Enable for final model validation runs only.
 cross_validation:
-  enabled: false
+  enabled: true
   min_train_years: 5
   fold_step_months: 12
   oos_window_months: 12
@@ -49,7 +49,39 @@ feature_selection:
     n_components:
       rates: 2
       inflation: 1
-      growth: 1
-      employment: 1
-      liquidity: 1
+      growth: 2
+      employment: 2
+      liquidity: 2
+  cross_group_correlation:
+    # Warn if any cross-group PC pair exceeds this absolute Pearson correlation in IS data.
+    # PCA makes within-group features orthogonal; this catches cross-group redundancy.
+    warn_threshold: 0.80
+
+# Transmat mixing-time diagnostic horizon (trading days).
+# evaluate_transmat_sanity() computes total-variation distance at A^n_mix.
+# ~20 trading days (~1 month) is the standard horizon for regime mixing diagnostics.
+evaluation:
+  transmat_sanity:
+    n_mix: 20
+
+# Soft-score parameters for select_best_hmm_model().
+# _soft_score() assigns 1.0 at 'optimal', 0.5 at 'lo'/'hi', and decays to 0.0
+# at lo - slack*(hi-lo) and hi + slack*(hi-lo). Never hardcode these in source code.
+selection:
+  soft_score:
+    duration:
+      optimal: 90.0   # Preferred median implied duration (days, ~4-5 months)
+      lo: 20.0        # Lower acceptable bound
+      hi: 200.0       # Upper acceptable bound
+      slack: 0.75     # Decay rate beyond bounds (fraction of hi-lo)
+    turnover:
+      optimal: 0.15   # Preferred 20-day total-variation distance
+      lo: 0.05
+      hi: 0.30
+      slack: 1.0
+    persistence:
+      optimal: 90.0   # Preferred average regime persistence (days)
+      lo: 20.0
+      hi: 200.0
+      slack: 1.0
 

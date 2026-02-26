@@ -42,10 +42,10 @@ def select_data(
     
     # Filter raw data to only include configured series
     # This is more efficient than concatenating multiple filtered dataframes
-    df_selected: pd.DataFrame = raw_data[raw_data["series_code"].isin(tickers)].copy()  # type: ignore
-    
+    df_selected: pd.DataFrame = raw_data[raw_data["series_code"].isin(tickers)].copy()  # type: ignore[index]  # pandas boolean indexing — mypy cannot narrow DataFrame.__getitem__ from Series[bool]
+
     # Sort by series code and date for consistency
     if "date" in df_selected.columns:
-        df_selected = df_selected.sort_values(by=["series_code", "date"]).reset_index(drop=True)  # type: ignore
+        df_selected = df_selected.sort_values(by=["series_code", "date"]).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow assignment
     
     return df_selected

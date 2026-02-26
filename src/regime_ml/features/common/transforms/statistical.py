@@ -38,7 +38,7 @@ class MovingAverage(BaseTransform):
 
         moving_average = series.rolling(window).mean()
 
-        return moving_average # type: ignore
+        return moving_average  # type: ignore[return-value]  # pandas rolling().mean() returns Series[Any] — mypy cannot narrow from input type
 
 class ExponentialMovingAverage(BaseTransform):
     """
@@ -54,9 +54,9 @@ class ExponentialMovingAverage(BaseTransform):
         span = self.params.get("span")
         halflife = self.params.get("halflife")
         if span:
-            return series.ewm(span=span).mean() # type: ignore
+            return series.ewm(span=span).mean()  # type: ignore[return-value]  # pandas ewm().mean() returns Series[Any] — mypy cannot narrow
         else:
-            return series.ewm(halflife=halflife).mean() # type: ignore
+            return series.ewm(halflife=halflife).mean()  # type: ignore[return-value]  # pandas ewm().mean() returns Series[Any] — mypy cannot narrow
 
 class RollingStd(BaseTransform):
     """
@@ -74,7 +74,7 @@ class RollingStd(BaseTransform):
         rolling = series.rolling(window)
         std = rolling.std()
 
-        return std # type: ignore
+        return std  # type: ignore[return-value]  # pandas rolling().std() returns Series[Any] — mypy cannot narrow from input type
 
 
 class Winsorize(BaseTransform):

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from pathlib import Path
 
 class BaseRegimeDetector(ABC):

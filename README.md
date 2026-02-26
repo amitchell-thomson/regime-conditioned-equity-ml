@@ -238,3 +238,6 @@ regime-conditioned-equity-ml/
 ├── pyproject.toml
 └── README.md
 ```
+
+## Code Line Count
+ `cloc . --exclude-list-file=.clocignore`
