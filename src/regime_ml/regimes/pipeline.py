@@ -44,6 +44,7 @@ def _resolve(path_str: str) -> Path:
 def _config_hash(cfg: dict) -> str:
     """SHA-256 of the YAML-serialisable regime config dict."""
     import yaml  # noqa: PLC0415
+
     raw = yaml.dump(cfg, default_flow_style=False, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -76,7 +77,10 @@ def _fit_grid(
         model_id = f"model_{idx}"
         logger.info(
             "_fit_grid: fitting %s (n_regimes=%d, cov=%s, p_stay=%.2f)",
-            model_id, n_regimes, cov_type, p_stay,
+            model_id,
+            n_regimes,
+            cov_type,
+            p_stay,
         )
         try:
             detector, scaler = fit_best_of_n_seeds(
@@ -99,15 +103,20 @@ def _fit_grid(
                 "p_stay": p_stay,
             }
         except Exception as exc:  # noqa: BLE001
-            logger.warning("_fit_grid: %s failed — %s: %s", model_id, type(exc).__name__, exc)
+            logger.warning(
+                "_fit_grid: %s failed — %s: %s", model_id, type(exc).__name__, exc
+            )
 
     if not models:
         raise RuntimeError(
             "_fit_grid: all grid configurations failed. "
             "Check features and HMM config."
         )
-    logger.info("_fit_grid: %d/%d configs fitted successfully.", len(models),
-                len(n_regimes_list) * len(cov_types) * len(p_stay_list))
+    logger.info(
+        "_fit_grid: %d/%d configs fitted successfully.",
+        len(models),
+        len(n_regimes_list) * len(cov_types) * len(p_stay_list),
+    )
     return models
 
 
@@ -129,6 +138,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     """
     if log_dir is not None:
         from regime_ml.utils.logging import configure_pipeline_logging
+
         configure_pipeline_logging(log_dir)
     cfg = load_configs()
     regime_cfg: dict = cfg.get("regimes", {})
@@ -142,7 +152,9 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     soft_score_cfg: dict | None = regime_cfg.get("selection", {}).get("soft_score")
 
     # --- 1. Load features
-    features_path = _resolve(outputs_cfg.get("features_path", "data/features/macro_features_ready.parquet"))
+    features_path = _resolve(
+        outputs_cfg.get("features_path", "data/features/macro_features_ready.parquet")
+    )
     logger.info("run_regime_pipeline: loading features from %s", features_path)
     if not features_path.exists():
         raise FileNotFoundError(
@@ -150,7 +162,11 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
             "Run 'regime-ml features' first."
         )
     features_df = pd.read_parquet(features_path)
-    logger.info("run_regime_pipeline: features shape %s, columns: %s", features_df.shape, list(features_df.columns))
+    logger.info(
+        "run_regime_pipeline: features shape %s, columns: %s",
+        features_df.shape,
+        list(features_df.columns),
+    )
 
     # SHA-256 fingerprint of the feature data — changes if upstream FRED data is updated.
     features_hash = hashlib.sha256(
@@ -169,7 +185,9 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         )
     logger.info(
         "run_regime_pipeline: IS=%d rows (%s → %s), OOS=%d rows",
-        len(df_is), df_is.index[0].date(), df_is.index[-1].date(),
+        len(df_is),
+        df_is.index[0].date(),
+        df_is.index[-1].date(),
         len(features_df) - len(df_is),
     )
 
@@ -222,22 +240,31 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
             cv_config=cv_cfg,
             train_end_date=train_end_date,
         )
-        logger.info("run_regime_pipeline: CV label_churn=%.3f, n_folds=%d",
-                    cv_results.get("label_churn") or float("nan"),
-                    cv_results.get("n_folds", 0))
+        logger.info(
+            "run_regime_pipeline: CV label_churn=%.3f, n_folds=%d",
+            cv_results.get("label_churn") or float("nan"),
+            cv_results.get("n_folds", 0),
+        )
 
     # --- 9. Episode validation
     episodes_path = _PROJECT_ROOT / "configs/regimes/economic_episodes.yaml"
     try:
-        episode_df = validate_against_episodes(regime_series, label_results, episodes_path)
-        n_matched_episodes = int(episode_df["archetype_match"].sum()) if not episode_df.empty else 0
+        episode_df = validate_against_episodes(
+            regime_series, label_results, episodes_path
+        )
+        n_matched_episodes = (
+            int(episode_df["archetype_match"].sum()) if not episode_df.empty else 0
+        )
         n_episodes = len(episode_df)
         logger.info(
             "run_regime_pipeline: episode validation — %d/%d matched.",
-            n_matched_episodes, n_episodes,
+            n_matched_episodes,
+            n_episodes,
         )
     except FileNotFoundError:
-        logger.warning("run_regime_pipeline: economic_episodes.yaml not found — skipping episode validation.")
+        logger.warning(
+            "run_regime_pipeline: economic_episodes.yaml not found — skipping episode validation."
+        )
         episode_df = pd.DataFrame()
         n_matched_episodes = 0
         n_episodes = 0
@@ -248,7 +275,11 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     regime_label_series = regime_series.map(state_to_label).rename("regime_label")
     proba_cols = {f"filter_proba_{k}": filter_proba_full[:, k] for k in range(K)}
     regime_assignments_df = pd.concat(
-        [regime_series, regime_label_series, pd.DataFrame(proba_cols, index=features_df.index)],
+        [
+            regime_series,
+            regime_label_series,
+            pd.DataFrame(proba_cols, index=features_df.index),
+        ],
         axis=1,
     )
 
@@ -261,7 +292,11 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         "n_regimes": int(best_model_data["n_regimes"]),
         "covariance_type": str(best_model_data["covariance_type"]),
         "p_stay": float(best_model_data["p_stay"]),
-        "bic_full": float(best_row.get("bic_full", np.nan)) if np.isfinite(float(best_row.get("bic_full", np.nan) or float("nan"))) else None,
+        "bic_full": (
+            float(best_row.get("bic_full", np.nan))
+            if np.isfinite(float(best_row.get("bic_full", np.nan) or float("nan")))
+            else None
+        ),
         "final_score": float(best_row.get("final_score", np.nan)),
         "train_end_date": str(train_end_date.date()),
         "data_start": str(features_df.index[0].date()),
@@ -281,18 +316,30 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         count = int((regime_series == r["state_idx"]).sum())
         logger.info(
             "  State %d: %s — %d days (%.1f%%)",
-            r["state_idx"], r["label"],
-            count, 100.0 * count / len(regime_series),
+            r["state_idx"],
+            r["label"],
+            count,
+            100.0 * count / len(regime_series),
         )
 
     # --- 11. Save outputs
-    out_dir = _resolve(outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")).parent
+    out_dir = _resolve(
+        outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")
+    ).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    assignments_path = _resolve(outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet"))
-    leaderboard_path = _resolve(outputs_cfg.get("model_leaderboard", "data/regimes/model_leaderboard.csv"))
-    label_path = _resolve(outputs_cfg.get("label_results", "data/regimes/label_results.json"))
-    metadata_path = _resolve(outputs_cfg.get("run_metadata", "data/regimes/run_metadata.json"))
+    assignments_path = _resolve(
+        outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")
+    )
+    leaderboard_path = _resolve(
+        outputs_cfg.get("model_leaderboard", "data/regimes/model_leaderboard.csv")
+    )
+    label_path = _resolve(
+        outputs_cfg.get("label_results", "data/regimes/label_results.json")
+    )
+    metadata_path = _resolve(
+        outputs_cfg.get("run_metadata", "data/regimes/run_metadata.json")
+    )
 
     regime_assignments_df.to_parquet(assignments_path)
     logger.info("run_regime_pipeline: saved regime assignments → %s", assignments_path)

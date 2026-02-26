@@ -14,9 +14,11 @@ from regime_ml.regimes.labeling import label_regimes
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _synthetic_archetypes_yaml(tmp_path: Path) -> Path:
     """Write a minimal, deterministic archetypes YAML for testing."""
-    content = textwrap.dedent("""\
+    content = textwrap.dedent(
+        """\
         label_config:
           min_confidence: 0.30
           min_margin: 0.05
@@ -75,7 +77,8 @@ def _synthetic_archetypes_yaml(tmp_path: Path) -> Path:
               growth: 0.2
               liquidity: -0.6
               employment: -0.1
-    """)
+    """
+    )
     p = tmp_path / "archetypes_test.yaml"
     p.write_text(content)
     return p
@@ -126,12 +129,30 @@ def _make_pca_features(T: int, K: int, seed: int = 0) -> tuple:
 
     # Give each state a distinct group profile
     state_means = {
-        0: {"growth_pc1": 1.5, "employment_pc1": 0.8, "liquidity_pc1": 1.0,
-            "inflation_pc1": -0.5, "rates_pc1": -0.3, "rates_pc2": -0.2},
-        1: {"growth_pc1": -1.5, "employment_pc1": -0.8, "liquidity_pc1": -1.2,
-            "inflation_pc1": 0.3, "rates_pc1": -0.2, "rates_pc2": 0.1},
-        2: {"growth_pc1": -0.5, "employment_pc1": -0.3, "liquidity_pc1": -0.4,
-            "inflation_pc1": 1.8, "rates_pc1": 1.3, "rates_pc2": 0.9},
+        0: {
+            "growth_pc1": 1.5,
+            "employment_pc1": 0.8,
+            "liquidity_pc1": 1.0,
+            "inflation_pc1": -0.5,
+            "rates_pc1": -0.3,
+            "rates_pc2": -0.2,
+        },
+        1: {
+            "growth_pc1": -1.5,
+            "employment_pc1": -0.8,
+            "liquidity_pc1": -1.2,
+            "inflation_pc1": 0.3,
+            "rates_pc1": -0.2,
+            "rates_pc2": 0.1,
+        },
+        2: {
+            "growth_pc1": -0.5,
+            "employment_pc1": -0.3,
+            "liquidity_pc1": -0.4,
+            "inflation_pc1": 1.8,
+            "rates_pc1": 1.3,
+            "rates_pc2": 0.9,
+        },
     }
     X_blocks = []
     proba_blocks = []
@@ -153,6 +174,7 @@ def _make_pca_features(T: int, K: int, seed: int = 0) -> tuple:
 # Core output structure tests
 # ---------------------------------------------------------------------------
 
+
 class TestLabelRegimesOutputStructure:
     def test_returns_list_of_dicts(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
@@ -166,8 +188,14 @@ class TestLabelRegimesOutputStructure:
         X, proba, names = _make_pca_features(T=120, K=3)
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         required = {
-            "state_idx", "label", "status", "confidence",
-            "margin", "archetype_key", "runner_up", "runner_up_score"
+            "state_idx",
+            "label",
+            "status",
+            "confidence",
+            "margin",
+            "archetype_key",
+            "runner_up",
+            "runner_up_score",
         }
         for r in results:
             assert required <= set(r.keys()), f"Missing keys in {r}"
@@ -184,7 +212,9 @@ class TestLabelRegimesOutputStructure:
         X, proba, names = _make_pca_features(T=120, K=3)
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         for r in results:
-            assert -1.0 <= r["confidence"] <= 1.0, f"confidence={r['confidence']} out of [-1,1]"
+            assert (
+                -1.0 <= r["confidence"] <= 1.0
+            ), f"confidence={r['confidence']} out of [-1,1]"
 
     def test_margin_nonnegative(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
@@ -198,15 +228,18 @@ class TestLabelRegimesOutputStructure:
 # No duplicate archetype assignments
 # ---------------------------------------------------------------------------
 
+
 class TestNoDuplicateArchetypes:
     def test_no_duplicate_archetypes_k3(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
         X, proba, names = _make_pca_features(T=300, K=3)
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
-        assigned_keys = [r["archetype_key"] for r in results if r["archetype_key"] is not None]
-        assert len(assigned_keys) == len(set(assigned_keys)), (
-            f"Duplicate archetype assignments: {assigned_keys}"
-        )
+        assigned_keys = [
+            r["archetype_key"] for r in results if r["archetype_key"] is not None
+        ]
+        assert len(assigned_keys) == len(
+            set(assigned_keys)
+        ), f"Duplicate archetype assignments: {assigned_keys}"
 
     def test_no_duplicate_archetypes_k4(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
@@ -218,11 +251,19 @@ class TestNoDuplicateArchetypes:
         X = rng.standard_normal((T, 6)) * 0.1
         proba = np.zeros((T, K))
         for k in range(K):
-            proba[k * block:(k + 1) * block, k] = 1.0
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+            proba[k * block : (k + 1) * block, k] = 1.0
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
-        assigned_keys = [r["archetype_key"] for r in results if r["archetype_key"] is not None]
+        assigned_keys = [
+            r["archetype_key"] for r in results if r["archetype_key"] is not None
+        ]
         assert len(assigned_keys) == len(set(assigned_keys))
 
 
@@ -230,10 +271,12 @@ class TestNoDuplicateArchetypes:
 # Confidence threshold (unclassified behaviour)
 # ---------------------------------------------------------------------------
 
+
 class TestConfidenceThreshold:
     def test_unclassified_label_string(self, tmp_path):
         """A state with very low confidence should produce 'Unclassified Regime k'."""
-        content = textwrap.dedent("""\
+        content = textwrap.dedent(
+            """\
             label_config:
               min_confidence: 0.9999   # impossibly high threshold
               min_margin: 0.05
@@ -246,7 +289,8 @@ class TestConfidenceThreshold:
                   liquidity: 0.0
                   inflation: 0.0
                   rates: 0.0
-        """)
+        """
+        )
         p = tmp_path / "strict_archetypes.yaml"
         p.write_text(content)
 
@@ -254,8 +298,14 @@ class TestConfidenceThreshold:
         T, K, d = 100, 1, 6
         X = rng.standard_normal((T, d)) * 0.1
         proba = np.ones((T, K))
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         results = label_regimes(X, proba, names, archetypes_path=p)
         assert results[0]["status"] == "unclassified"
         assert results[0]["label"].startswith("Unclassified Regime")
@@ -267,12 +317,15 @@ class TestConfidenceThreshold:
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         # With well-separated synthetic states at least one should be matched
         matched = [r for r in results if r["status"] == "matched"]
-        assert len(matched) >= 1, "Expected at least one matched state with well-separated data"
+        assert (
+            len(matched) >= 1
+        ), "Expected at least one matched state with well-separated data"
 
 
 # ---------------------------------------------------------------------------
 # Works for varying K values
 # ---------------------------------------------------------------------------
+
 
 class TestVaryingK:
     def test_k_equals_2(self, tmp_path):
@@ -289,17 +342,28 @@ class TestVaryingK:
         X = rng.standard_normal((T, 6)) * 0.1
         proba = np.zeros((T, K))
         for k in range(K):
-            proba[k * block:(k + 1) * block, k] = 1.0
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+            proba[k * block : (k + 1) * block, k] = 1.0
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         assert len(results) == 5
-        assigned_keys = [r["archetype_key"] for r in results if r["archetype_key"] is not None]
-        assert len(assigned_keys) == len(set(assigned_keys)), "Duplicate archetype keys for K=5"
+        assigned_keys = [
+            r["archetype_key"] for r in results if r["archetype_key"] is not None
+        ]
+        assert len(assigned_keys) == len(
+            set(assigned_keys)
+        ), "Duplicate archetype keys for K=5"
 
     def test_k_greater_than_archetypes_handled(self, tmp_path):
         """When K > n_archetypes, excess states should be unclassified, not crash."""
-        content = textwrap.dedent("""\
+        content = textwrap.dedent(
+            """\
             label_config:
               min_confidence: 0.0
               min_margin: 0.0
@@ -320,7 +384,8 @@ class TestVaryingK:
                   liquidity: 0.0
                   inflation: 0.0
                   rates: 0.0
-        """)
+        """
+        )
         p = tmp_path / "two_archetypes.yaml"
         p.write_text(content)
 
@@ -330,9 +395,15 @@ class TestVaryingK:
         proba = np.zeros((T, K))
         block = T // K
         for k in range(K):
-            proba[k * block:(k + 1) * block, k] = 1.0
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+            proba[k * block : (k + 1) * block, k] = 1.0
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         results = label_regimes(X, proba, names, archetypes_path=p)
         assert len(results) == K
         # Extra states beyond 2 archetypes must be unclassified
@@ -344,21 +415,34 @@ class TestVaryingK:
 # Input validation
 # ---------------------------------------------------------------------------
 
+
 class TestInputValidation:
     def test_mismatched_T_raises(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
         X = np.random.randn(100, 6)
         proba = np.random.dirichlet([1, 1, 1], size=50)
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         with pytest.raises(ValueError, match="time dimension"):
             label_regimes(X, proba, names, archetypes_path=arch_path)
 
     def test_missing_archetypes_file_raises(self, tmp_path):
         X = np.random.randn(50, 6)
         proba = np.ones((50, 2)) / 2
-        names = ["growth_pc1", "employment_pc1", "liquidity_pc1",
-                 "inflation_pc1", "rates_pc1", "rates_pc2"]
+        names = [
+            "growth_pc1",
+            "employment_pc1",
+            "liquidity_pc1",
+            "inflation_pc1",
+            "rates_pc1",
+            "rates_pc2",
+        ]
         bad_path = tmp_path / "does_not_exist.yaml"
         with pytest.raises(FileNotFoundError):
             label_regimes(X, proba, names, archetypes_path=bad_path)

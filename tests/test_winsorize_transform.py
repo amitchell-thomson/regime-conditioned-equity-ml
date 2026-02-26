@@ -18,6 +18,7 @@ def _make_series(n: int = 100, seed: int = 0) -> pd.Series:
 # Clipping behaviour
 # ---------------------------------------------------------------------------
 
+
 def test_clips_above_sigma():
     """Values above +sigma must be clipped to exactly +sigma."""
     s = pd.Series([0.0, 1.0, 5.0, 100.0])
@@ -50,6 +51,7 @@ def test_exact_boundary_values_unchanged():
 # Parameter validation
 # ---------------------------------------------------------------------------
 
+
 def test_missing_sigma_raises():
     """Winsorize() without sigma must raise ValueError mentioning 'sigma'."""
     with pytest.raises(ValueError, match="sigma"):
@@ -72,6 +74,7 @@ def test_negative_sigma_raises():
 # NaN handling
 # ---------------------------------------------------------------------------
 
+
 def test_nan_passthrough():
     """NaN values must remain NaN after winsorization — never clipped to ±sigma."""
     s = pd.Series([np.nan, 5.0, -5.0, 0.0])
@@ -84,6 +87,7 @@ def test_nan_passthrough():
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 
 def test_registered_in_registry():
     """'winsorize' key in TransformRegistry must resolve to Winsorize class."""
@@ -103,12 +107,15 @@ def test_create_via_registry():
 # Staleness modes
 # ---------------------------------------------------------------------------
 
+
 def test_strict_staleness_mode_preserves_length():
     """Output length must equal input length under 'strict' staleness mode."""
     s = _make_series(n=50)
     is_new = pd.Series(False, index=s.index)
     is_new.iloc[::5] = True
-    result = Winsorize(sigma=4.0).transform(s, is_new_data=is_new, staleness_mode="strict")
+    result = Winsorize(sigma=4.0).transform(
+        s, is_new_data=is_new, staleness_mode="strict"
+    )
     assert len(result) == len(s)
 
 
@@ -116,11 +123,13 @@ def test_strict_staleness_mode_clips_values():
     """Under 'strict' mode, non-NaN output values must all lie within [-sigma, +sigma]."""
     s = _make_series(n=60)
     is_new = pd.Series(True, index=s.index)
-    result = Winsorize(sigma=4.0).transform(s, is_new_data=is_new, staleness_mode="strict")
-    valid = result.dropna()
-    assert (valid.abs() <= 4.0 + 1e-9).all(), (
-        f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
+    result = Winsorize(sigma=4.0).transform(
+        s, is_new_data=is_new, staleness_mode="strict"
     )
+    valid = result.dropna()
+    assert (
+        valid.abs() <= 4.0 + 1e-9
+    ).all(), f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
 
 
 def test_ignore_staleness_mode_clips_values():

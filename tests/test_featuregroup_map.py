@@ -1,12 +1,13 @@
 """Tests for build_featuregroup_map YAML-based implementation."""
 
-
 from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 
 def test_vixcls_maps_to_liquidity():
     """VIXCLS features must map to 'liquidity' as declared in regime_universe.yaml."""
-    result = build_featuregroup_map(["VIXCLS_level_zscore_63", "VIXCLS_diff_5_zscore_126"])
+    result = build_featuregroup_map(
+        ["VIXCLS_level_zscore_63", "VIXCLS_diff_5_zscore_126"]
+    )
     assert result["VIXCLS_level_zscore_63"] == "liquidity"
     assert result["VIXCLS_diff_5_zscore_126"] == "liquidity"
 
@@ -14,13 +15,13 @@ def test_vixcls_maps_to_liquidity():
 def test_known_series_map_correctly():
     """Spot-check that other series IDs resolve to their declared categories."""
     features = [
-        "NFCI_level_zscore_50",       # liquidity
-        "T10Y3M_level_zscore_252",    # rates
-        "DGS2_level_zscore_252",      # rates
-        "PCEPILFE_yoy_zscore_36",     # inflation
-        "CFNAI_level_zscore_36",      # growth
-        "INDPRO_yoy_zscore_36",       # growth
-        "ICSA_ma_4_zscore_50",        # employment
+        "NFCI_level_zscore_50",  # liquidity
+        "T10Y3M_level_zscore_252",  # rates
+        "DGS2_level_zscore_252",  # rates
+        "PCEPILFE_yoy_zscore_36",  # inflation
+        "CFNAI_level_zscore_36",  # growth
+        "INDPRO_yoy_zscore_36",  # growth
+        "ICSA_ma_4_zscore_50",  # employment
     ]
     result = build_featuregroup_map(features)
     assert result["NFCI_level_zscore_50"] == "liquidity"
@@ -50,6 +51,6 @@ def test_no_parquet_io(monkeypatch):
 
     # If load_dataframe is still imported and called, this test will catch it
     # by asserting the module no longer imports it
-    assert not hasattr(mod, "load_dataframe"), (
-        "build_featuregroup_map.py should not import load_dataframe after the refactor"
-    )
+    assert not hasattr(
+        mod, "load_dataframe"
+    ), "build_featuregroup_map.py should not import load_dataframe after the refactor"

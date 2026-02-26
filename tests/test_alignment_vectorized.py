@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 
-
 def _make_series_df(
     dates: list[str],
     values: list[float],
@@ -51,7 +50,13 @@ class TestDaysSinceUpdateVectorized:
     def test_multiple_updates(self):
         """Days reset to 0 at each new real observation."""
         df = _make_series_df(
-            dates=["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04", "2020-01-05"],
+            dates=[
+                "2020-01-01",
+                "2020-01-02",
+                "2020-01-03",
+                "2020-01-04",
+                "2020-01-05",
+            ],
             values=[1.0, 1.0, 2.0, 2.0, 2.0],
             is_new=[True, False, True, False, False],
         )
@@ -97,7 +102,9 @@ class TestDaysSinceUpdateVectorized:
         is_new = rng.random(n) > 0.8
         is_new[0] = True
         df = _make_series_df(
-            dates=pd.date_range("2020-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist(),
+            dates=pd.date_range("2020-01-01", periods=n, freq="B")
+            .strftime("%Y-%m-%d")
+            .tolist(),
             values=rng.standard_normal(n).tolist(),
             is_new=is_new.tolist(),
         )

@@ -2,12 +2,14 @@ from .base import BaseTransform
 import pandas as pd
 import numpy as np
 
+
 class ZScore(BaseTransform):
     """
     Rolling z-score normalization.
 
     Formula: (x - mean(x, window)) / std(x, window)
     """
+
     def _validate_params(self) -> None:
         if "window" not in self.params:
             raise ValueError("Window parameter is required for ZScore transform")
@@ -23,12 +25,14 @@ class ZScore(BaseTransform):
 
         return z_score
 
+
 class MovingAverage(BaseTransform):
     """
     Rolling moving average.
 
     Formula: mean(x, window)
     """
+
     def _validate_params(self) -> None:
         if "window" not in self.params:
             raise ValueError("Window parameter is required for MovingAverage transform")
@@ -40,12 +44,14 @@ class MovingAverage(BaseTransform):
 
         return moving_average  # type: ignore[return-value]  # pandas rolling().mean() returns Series[Any] — mypy cannot narrow from input type
 
+
 class ExponentialMovingAverage(BaseTransform):
     """
     Exponential moving average.
 
     Formula: EMA(x, window) = alpha * x + (1 - alpha) * EMA(x, window-1)
     """
+
     def _validate_params(self) -> None:
         if "span" not in self.params and "halflife" not in self.params:
             raise ValueError("EMA requires 'span' or 'halflife' parameter")
@@ -58,12 +64,14 @@ class ExponentialMovingAverage(BaseTransform):
         else:
             return series.ewm(halflife=halflife).mean()  # type: ignore[return-value]  # pandas ewm().mean() returns Series[Any] — mypy cannot narrow
 
+
 class RollingStd(BaseTransform):
     """
     Rolling standard deviation.
 
     Formula: std(x, window)
     """
+
     def _validate_params(self) -> None:
         if "window" not in self.params:
             raise ValueError("Window parameter is required for RollingStd transform")

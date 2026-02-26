@@ -1,5 +1,11 @@
 from .base import BaseTransform, ChainedTransform
-from .statistical import ZScore, MovingAverage, ExponentialMovingAverage, RollingStd, Winsorize
+from .statistical import (
+    ZScore,
+    MovingAverage,
+    ExponentialMovingAverage,
+    RollingStd,
+    Winsorize,
+)
 from .temporal import Diff, PctChange, YoY, Returns, Level
 from .registry import TransformRegistry
 

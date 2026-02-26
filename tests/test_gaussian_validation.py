@@ -18,13 +18,21 @@ def _make_X_and_labels(seed: int = 0, n: int = 200, d: int = 3, n_regimes: int =
 # Output structure
 # ---------------------------------------------------------------------------
 
+
 def test_output_structure():
     """Output must be a dict keyed by int regime ids; each sub-dict has all 7 fields."""
     X, labels = _make_X_and_labels()
     result = validate_gaussian_assumption(X, labels, feature_names=["a", "b", "c"])
     assert set(result.keys()) == {0, 1, 2}
-    required_fields = {"n", "skewness", "kurtosis", "shapiro_W", "shapiro_p",
-                       "qq_theoretical", "qq_sample"}
+    required_fields = {
+        "n",
+        "skewness",
+        "kurtosis",
+        "shapiro_W",
+        "shapiro_p",
+        "qq_theoretical",
+        "qq_sample",
+    }
     for regime_stats in result.values():
         assert set(regime_stats.keys()) == {"a", "b", "c"}
         for feat_stats in regime_stats.values():
@@ -62,6 +70,7 @@ def test_qq_arrays_have_matching_length():
 # Statistical correctness
 # ---------------------------------------------------------------------------
 
+
 def test_skewness_near_zero_for_normal_data():
     """Standard normal data should yield |skewness| < 1.0 for large n."""
     rng = np.random.default_rng(99)
@@ -96,20 +105,21 @@ def test_high_kurtosis_for_heavy_tailed_data():
     X = rng.standard_t(df=3, size=(300, 1))
     labels = np.zeros(300, dtype=int)
     result = validate_gaussian_assumption(X, labels)
-    assert result[0]["f0"]["kurtosis"] > 2.0, (
-        "Expected excess kurtosis > 2 for t(3) distribution."
-    )
+    assert (
+        result[0]["f0"]["kurtosis"] > 2.0
+    ), "Expected excess kurtosis > 2 for t(3) distribution."
 
 
 # ---------------------------------------------------------------------------
 # Small-regime handling
 # ---------------------------------------------------------------------------
 
+
 def test_shapiro_nan_for_small_regime():
     """Regimes with fewer than 8 observations must have shapiro_W = NaN."""
     X = np.random.default_rng(1).standard_normal((20, 2))
     labels = np.zeros(20, dtype=int)
-    labels[:5] = 1    # regime 1 has only 5 points — below the 8-observation threshold
+    labels[:5] = 1  # regime 1 has only 5 points — below the 8-observation threshold
     result = validate_gaussian_assumption(X, labels)
     assert np.isnan(result[1]["f0"]["shapiro_W"])
     assert np.isnan(result[1]["f0"]["shapiro_p"])
@@ -119,7 +129,7 @@ def test_shapiro_present_for_regime_at_threshold():
     """Regimes with exactly 8 observations must have a finite shapiro_W."""
     X = np.random.default_rng(2).standard_normal((50, 1))
     labels = np.zeros(50, dtype=int)
-    labels[:8] = 1    # regime 1 has exactly 8 points
+    labels[:8] = 1  # regime 1 has exactly 8 points
     result = validate_gaussian_assumption(X, labels)
     assert np.isfinite(result[1]["f0"]["shapiro_W"])
     assert np.isfinite(result[1]["f0"]["shapiro_p"])
@@ -128,6 +138,7 @@ def test_shapiro_present_for_regime_at_threshold():
 # ---------------------------------------------------------------------------
 # Input robustness
 # ---------------------------------------------------------------------------
+
 
 def test_nan_in_features_handled_gracefully():
     """NaN values in X must not cause an exception; statistics computed on valid rows."""

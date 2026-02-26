@@ -16,10 +16,11 @@ from regime_ml.utils.config import load_configs
 
 logger = logging.getLogger(__name__)
 
+
 def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
     """
     Evaluate regime stability metrics.
-    
+
     Returns:
         - persistence: Average regime duration (days)
         - n_transitions: Number of regime changes
@@ -64,6 +65,7 @@ def evaluate_regime_stability(regimes: np.ndarray) -> Dict[str, Any]:
         "max_regime_share": max_regime_share,
     }
 
+
 def evaluate_entropy_balance(proba: np.ndarray, eps: float = 1e-12) -> Dict[str, Any]:
     """
     Entropy of a probability vector (or matrix) with safe handling of zeros.
@@ -88,6 +90,7 @@ def evaluate_entropy_balance(proba: np.ndarray, eps: float = 1e-12) -> Dict[str,
     p = p / p.sum()
     H = -float(np.sum(p * np.log2(p)))
     return {"entropy_balance": H}
+
 
 def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
     """
@@ -143,6 +146,7 @@ def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
         "tv_distance": tv_mean,  # horizon controlled by n_mix parameter
     }
 
+
 def evaluate_macro_coherence(
     X: np.ndarray,
     proba: np.ndarray,
@@ -172,44 +176,50 @@ def evaluate_macro_coherence(
     assert T == T2, "X and proba must align on time dimension"
 
     # --- Weighted regime means (K,d)
-    Nk = proba.sum(axis=0)                       # (K,)
+    Nk = proba.sum(axis=0)  # (K,)
     Nk = np.maximum(Nk, 1e-12)
-    mu_k = (proba.T @ X) / Nk[:, None]           # (K,d)
+    mu_k = (proba.T @ X) / Nk[:, None]  # (K,d)
 
     # --- (A) Mahalanobis separation between regime means
     # Use shrinkage covariance for stability; get precision (inverse covariance)
     lw = LedoitWolf().fit(X)
-    precision = lw.precision_                    # (d,d)
+    precision = lw.precision_  # (d,d)
 
     # Pairwise distances (upper triangle)
     dists = []
     for i in range(K):
         for j in range(i + 1, K):
-            diff = mu_k[i] - mu_k[j]             # (d,)
+            diff = mu_k[i] - mu_k[j]  # (d,)
             dist2 = float(diff @ precision @ diff)
             dists.append(np.sqrt(max(dist2, 0.0)))
 
     dists = np.array(dists, dtype=float) if dists else np.array([0.0])
 
     # --- (B) ANOVA-style variance explained (R2 per feature)
-    mu = X.mean(axis=0)                          # (d,)
+    mu = X.mean(axis=0)  # (d,)
     total_var = np.var(X, axis=0, ddof=1)
     total_var = np.maximum(total_var, 1e-12)
 
-    wk = Nk / Nk.sum()                           # (K,)
-    between_var = np.sum(wk[:, None] * (mu_k - mu[None, :])**2, axis=0)  # (d,)
-    r2 = between_var / total_var                 # (d,)
+    wk = Nk / Nk.sum()  # (K,)
+    between_var = np.sum(wk[:, None] * (mu_k - mu[None, :]) ** 2, axis=0)  # (d,)
+    r2 = between_var / total_var  # (d,)
 
     # Top features by R2
     idx = np.argsort(-r2)
+
     def fname(i: int) -> str:
         return feature_names[i] if feature_names is not None else f"f{i}"
+
     top_n = 5
     top_feats = [(fname(i), float(r2[i])) for i in idx[:top_n]]
 
     # Average R^2 score per group
 
-    name_to_idx = {name: i for i, name in enumerate(feature_names)} if feature_names is not None else {}
+    name_to_idx = (
+        {name: i for i, name in enumerate(feature_names)}
+        if feature_names is not None
+        else {}
+    )
     group_r2: Dict[str, float] = {}
     if featuregroup_map is not None:
         # featuregroup_map: {feature_name: group_name}
@@ -230,14 +240,11 @@ def evaluate_macro_coherence(
         "maha_min": float(np.min(dists)),
         "maha_median": float(np.median(dists)),
         "maha_mean": float(np.mean(dists)),
-
         # 4–5: how much regimes explain macro features
         "anova_r2_mean": float(np.mean(r2)),
         "anova_r2_median": float(np.median(r2)),
-
         # 6. Per group average R^2 score
         "anova_group_r2": group_r2,
-
         # 7: what features define regimes
         "anova_top_features": top_feats,
     }
@@ -309,7 +316,11 @@ def validate_gaussian_assumption(
             n_clean = len(col_clean)
 
             skew = float(scipy_stats.skew(col_clean)) if n_clean >= 2 else np.nan
-            kurt = float(scipy_stats.kurtosis(col_clean, fisher=True)) if n_clean >= 2 else np.nan
+            kurt = (
+                float(scipy_stats.kurtosis(col_clean, fisher=True))
+                if n_clean >= 2
+                else np.nan
+            )
 
             if n_clean >= _SHAPIRO_MIN_N:
                 w_stat, p_val = scipy_stats.shapiro(col_clean)
@@ -326,13 +337,13 @@ def validate_gaussian_assumption(
                 qq_sample = np.array([], float)
 
             regime_stats[fname] = {
-                "n":              n_regime,
-                "skewness":       skew,
-                "kurtosis":       kurt,
-                "shapiro_W":      sw_w,
-                "shapiro_p":      sw_p,
+                "n": n_regime,
+                "skewness": skew,
+                "kurtosis": kurt,
+                "shapiro_W": sw_w,
+                "shapiro_p": sw_p,
                 "qq_theoretical": qq_theoretical,
-                "qq_sample":      qq_sample,
+                "qq_sample": qq_sample,
             }
 
         results[int(regime_id)] = regime_stats
@@ -381,7 +392,9 @@ def compare_hmm_models(
         df_selected = features[selected_features]
 
         # Build group map only for selected features
-        featuregroup_map = {f: global_group_map.get(f, "unknown") for f in selected_features}
+        featuregroup_map = {
+            f: global_group_map.get(f, "unknown") for f in selected_features
+        }
 
         # Scale
         X_full = df_selected.values
@@ -401,8 +414,12 @@ def compare_hmm_models(
 
         # --- IS / OOS outputs
         # (compute on each slice separately; avoids any accidental cross-slice dependence)
-        regimes_is = model.predict(X_is) if X_is.shape[0] > 0 else np.array([], dtype=int)
-        regimes_oos = model.predict(X_oos) if X_oos.shape[0] > 0 else np.array([], dtype=int)
+        regimes_is = (
+            model.predict(X_is) if X_is.shape[0] > 0 else np.array([], dtype=int)
+        )
+        regimes_oos = (
+            model.predict(X_oos) if X_oos.shape[0] > 0 else np.array([], dtype=int)
+        )
 
         smooth_is = model.smooth_proba(X_is) if X_is.shape[0] > 0 else None
 
@@ -412,25 +429,48 @@ def compare_hmm_models(
         # --- Metrics (FULL)
         regime_stability_full = evaluate_regime_stability(regimes_full)
         entropy_balance_full = evaluate_entropy_balance(filt_full)
-        trans_sanity = evaluate_transmat_sanity(model.get_transition_matrix(), n_mix=n_mix)
+        trans_sanity = evaluate_transmat_sanity(
+            model.get_transition_matrix(), n_mix=n_mix
+        )
         macro_coh_full = evaluate_macro_coherence(
-            X_full_scaled, smooth_full,
+            X_full_scaled,
+            smooth_full,
             feature_names=selected_features,
-            featuregroup_map=featuregroup_map
+            featuregroup_map=featuregroup_map,
         )
 
         # --- Metrics (IS / OOS)
-        regime_stability_is = evaluate_regime_stability(regimes_is) if regimes_is.size else {}
-        regime_stability_oos = evaluate_regime_stability(regimes_oos) if regimes_oos.size else {}
+        regime_stability_is = (
+            evaluate_regime_stability(regimes_is) if regimes_is.size else {}
+        )
+        regime_stability_oos = (
+            evaluate_regime_stability(regimes_oos) if regimes_oos.size else {}
+        )
 
-        entropy_balance_is = evaluate_entropy_balance(filt_is) if filt_is is not None else {}
-        entropy_balance_oos = evaluate_entropy_balance(filt_oos) if filt_oos is not None else {}
+        entropy_balance_is = (
+            evaluate_entropy_balance(filt_is) if filt_is is not None else {}
+        )
+        entropy_balance_oos = (
+            evaluate_entropy_balance(filt_oos) if filt_oos is not None else {}
+        )
 
         # IS: smoothed probabilities are acceptable for interpretation (not a trading signal).
-        macro_coh_is = evaluate_macro_coherence(X_is, smooth_is, selected_features, featuregroup_map) if smooth_is is not None else {}
+        macro_coh_is = (
+            evaluate_macro_coherence(
+                X_is, smooth_is, selected_features, featuregroup_map
+            )
+            if smooth_is is not None
+            else {}
+        )
         # OOS: must use filter_proba (causal). smooth_proba runs forward-backward within the
         # OOS window, giving each time-step t access to t+1…T_oos — look-ahead bias.
-        macro_coh_oos = evaluate_macro_coherence(X_oos, filt_oos, selected_features, featuregroup_map) if filt_oos is not None else {}
+        macro_coh_oos = (
+            evaluate_macro_coherence(
+                X_oos, filt_oos, selected_features, featuregroup_map
+            )
+            if filt_oos is not None
+            else {}
+        )
 
         # BIC / AIC — use scaled data for consistency with the model's training data
         bic_is = model.bic(X_is) if X_is.shape[0] > 0 else np.nan
@@ -442,19 +482,16 @@ def compare_hmm_models(
             "n_obs_full": int(X_full_scaled.shape[0]),
             "n_obs_is": int(X_is.shape[0]),
             "n_obs_oos": int(X_oos.shape[0]),
-
             # Complexity penalties
             "bic_is": bic_is,
             "aic_is": aic_is,
             "bic_full": bic_full,
             "aic_full": aic_full,
-
             # Full-sample (as before)
             "regime_stability": regime_stability_full,
             "entropy_balance": entropy_balance_full,
             "transition_matrix_sanity": trans_sanity,
             "macro_coherence": macro_coh_full,
-
             # New: IS vs OOS (structural validation)
             "in_sample": {
                 "regime_stability": regime_stability_is,
@@ -517,25 +554,33 @@ def equity_metrics_by_regime(
         ann_vol = float(vol_daily * np.sqrt(freq))
 
         ex_daily = mean_daily - rf_daily
-        sharpe = float((ex_daily / vol_daily) * np.sqrt(freq)) if vol_daily > 0 else np.nan
+        sharpe = (
+            float((ex_daily / vol_daily) * np.sqrt(freq)) if vol_daily > 0 else np.nan
+        )
 
         # max drawdown within that regime's subsequence (contiguous in time is not required for this simple view)
         wealth = np.cumprod(1.0 + rets)
         peak = np.maximum.accumulate(wealth)
         mdd = float(np.min(wealth / peak - 1.0))
 
-        out.append({
-            "regime": r,
-            "n_days": n,
-            "mean_daily_ret": mean_daily,
-            "ann_return": ann_ret,
-            "ann_vol": ann_vol,
-            "sharpe": sharpe,
-            "max_drawdown": mdd,
-            "up_day_frac": float(np.mean(rets > 0)),
-        })
+        out.append(
+            {
+                "regime": r,
+                "n_days": n,
+                "mean_daily_ret": mean_daily,
+                "ann_return": ann_ret,
+                "ann_vol": ann_vol,
+                "sharpe": sharpe,
+                "max_drawdown": mdd,
+                "up_day_frac": float(np.mean(rets > 0)),
+            }
+        )
 
-    return pd.DataFrame(out).sort_values("ann_return", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(out)
+        .sort_values("ann_return", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def expanding_window_cv(
@@ -620,10 +665,15 @@ def expanding_window_cv(
     for fold_end in fold_ends:
         oos_end = fold_end + pd.DateOffset(months=oos_window_months)
         df_is = features_df[features_df.index <= fold_end]
-        df_oos = features_df[(features_df.index > fold_end) & (features_df.index <= oos_end)]
+        df_oos = features_df[
+            (features_df.index > fold_end) & (features_df.index <= oos_end)
+        ]
 
         if len(df_is) < 30 or len(df_oos) < 10:
-            logger.debug("expanding_window_cv: skipping fold %s — insufficient data.", fold_end.date())
+            logger.debug(
+                "expanding_window_cv: skipping fold %s — insufficient data.",
+                fold_end.date(),
+            )
             continue
 
         try:
@@ -638,7 +688,9 @@ def expanding_window_cv(
                 feature_names=feature_names,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("expanding_window_cv: fold %s fit failed: %s", fold_end.date(), exc)
+            logger.warning(
+                "expanding_window_cv: fold %s fit failed: %s", fold_end.date(), exc
+            )
             continue
 
         X_oos = scaler.transform(df_oos.values)
@@ -650,10 +702,15 @@ def expanding_window_cv(
             perm = np.arange(n_regimes)
         else:
             means_ref = ref_detector.model.means_
-            cost = np.array([
-                [np.linalg.norm(means_cand[i] - means_ref[j]) for j in range(n_regimes)]
-                for i in range(n_regimes)
-            ])
+            cost = np.array(
+                [
+                    [
+                        np.linalg.norm(means_cand[i] - means_ref[j])
+                        for j in range(n_regimes)
+                    ]
+                    for i in range(n_regimes)
+                ]
+            )
             _, col_ind = linear_sum_assignment(cost)
             perm = col_ind
 
@@ -664,7 +721,8 @@ def expanding_window_cv(
         # OOS macro coherence
         filt_oos = detector.filter_proba(X_oos)
         coh = evaluate_macro_coherence(
-            X_oos, filt_oos,
+            X_oos,
+            filt_oos,
             feature_names=feature_names,
             featuregroup_map=featuregroup_map,
         )
@@ -699,12 +757,15 @@ def expanding_window_cv(
             "expanding_window_cv: label_churn=%.3f exceeds threshold %.2f. "
             "Regime assignments are unstable across window sizes — "
             "consider adjusting n_regimes or p_stay.",
-            label_churn, max_churn_warning,
+            label_churn,
+            max_churn_warning,
         )
 
     return {
         "label_churn": round(label_churn, 4) if np.isfinite(label_churn) else None,
-        "metric_cv_std": round(metric_cv_std, 4) if np.isfinite(metric_cv_std) else None,
+        "metric_cv_std": (
+            round(metric_cv_std, 4) if np.isfinite(metric_cv_std) else None
+        ),
         "n_folds": n_folds,
         "fold_scores": [round(s, 4) if np.isfinite(s) else None for s in fold_scores],
         "churn_warning": churn_warning,
@@ -743,7 +804,9 @@ def validate_against_episodes(
           dominant_state, dominant_label, archetype_match,
           expected_pct, dominant_pct, n_days
     """
-    ep_path = Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
+    ep_path = (
+        Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
+    )
     if not ep_path.exists():
         raise FileNotFoundError(f"economic_episodes.yaml not found at {ep_path}.")
 
@@ -753,7 +816,8 @@ def validate_against_episodes(
 
     # Build lookup: archetype_key → state_idx
     key_to_state: dict[str | None, int] = {
-        r["archetype_key"]: r["state_idx"] for r in label_results
+        r["archetype_key"]: r["state_idx"]
+        for r in label_results
         if r.get("archetype_key") is not None
     }
     state_to_label: dict[int, str] = {r["state_idx"]: r["label"] for r in label_results}
@@ -769,19 +833,24 @@ def validate_against_episodes(
         n_days = len(ep_regimes)
 
         if n_days == 0:
-            logger.debug("validate_against_episodes: episode '%s' has no regime data — skipping.", name)
-            rows.append({
-                "episode": name,
-                "start": start,
-                "end": end,
-                "expected_archetype": expected_key,
-                "dominant_state": None,
-                "dominant_label": None,
-                "archetype_match": False,
-                "expected_pct": np.nan,
-                "dominant_pct": np.nan,
-                "n_days": 0,
-            })
+            logger.debug(
+                "validate_against_episodes: episode '%s' has no regime data — skipping.",
+                name,
+            )
+            rows.append(
+                {
+                    "episode": name,
+                    "start": start,
+                    "end": end,
+                    "expected_archetype": expected_key,
+                    "dominant_state": None,
+                    "dominant_label": None,
+                    "archetype_match": False,
+                    "expected_pct": np.nan,
+                    "dominant_pct": np.nan,
+                    "n_days": 0,
+                }
+            )
             continue
 
         # Dominant state
@@ -798,26 +867,33 @@ def validate_against_episodes(
         else:
             expected_pct = np.nan
 
-        archetype_match = dominant_state == expected_state if expected_state is not None else False
+        archetype_match = (
+            dominant_state == expected_state if expected_state is not None else False
+        )
 
-        rows.append({
-            "episode": name,
-            "start": start,
-            "end": end,
-            "expected_archetype": expected_key,
-            "dominant_state": dominant_state,
-            "dominant_label": dominant_label,
-            "archetype_match": archetype_match,
-            "expected_pct": round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan,
-            "dominant_pct": round(dominant_pct, 3),
-            "n_days": n_days,
-        })
+        rows.append(
+            {
+                "episode": name,
+                "start": start,
+                "end": end,
+                "expected_archetype": expected_key,
+                "dominant_state": dominant_state,
+                "dominant_label": dominant_label,
+                "archetype_match": archetype_match,
+                "expected_pct": (
+                    round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan
+                ),
+                "dominant_pct": round(dominant_pct, 3),
+                "n_days": n_days,
+            }
+        )
 
     df = pd.DataFrame(rows)
     if not df.empty:
         n_matched = int(df["archetype_match"].sum())
         logger.info(
             "validate_against_episodes: %d/%d episodes matched expected archetype.",
-            n_matched, len(df),
+            n_matched,
+            len(df),
         )
     return df

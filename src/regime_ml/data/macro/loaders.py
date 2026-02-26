@@ -70,7 +70,8 @@ def load_raw_data(
 
     # Find all parquet files recursively, excluding ALFRED files
     parquet_files = sorted(
-        f for f in source_dir.rglob("*.parquet")
+        f
+        for f in source_dir.rglob("*.parquet")
         if not f.name.endswith("_alfred.parquet")
     )
 
@@ -101,15 +102,17 @@ def load_raw_data(
     combined_df = pd.concat(dataframes, ignore_index=True)
 
     # Sort by date and series_code for consistency
-    if 'date' in combined_df.columns and 'series_code' in combined_df.columns:
-        combined_df = combined_df.sort_values(['series_code', 'date']).reset_index(drop=True)
+    if "date" in combined_df.columns and "series_code" in combined_df.columns:
+        combined_df = combined_df.sort_values(["series_code", "date"]).reset_index(
+            drop=True
+        )
 
     logger.info("Combined dataframe shape: %s", combined_df.shape)
     logger.debug("Columns: %s", combined_df.columns.tolist())
-    if 'category' in combined_df.columns:
-        logger.debug("Categories: %s", combined_df['category'].unique().tolist())
-    if 'series_code' in combined_df.columns:
-        logger.info("Unique series: %d", combined_df['series_code'].nunique())
+    if "category" in combined_df.columns:
+        logger.debug("Categories: %s", combined_df["category"].unique().tolist())
+    if "series_code" in combined_df.columns:
+        logger.info("Unique series: %d", combined_df["series_code"].nunique())
 
     # Resolve output path
     output_path = Path(output_path)
@@ -200,10 +203,16 @@ def load_alfred_data(
     logger.info("Combining ALFRED dataframes...")
     combined_df = pd.concat(dataframes, ignore_index=True)
 
-    if 'series_code' in combined_df.columns and 'realtime_start' in combined_df.columns:
-        combined_df = combined_df.sort_values(['series_code', 'realtime_start', 'date']).reset_index(drop=True)
+    if "series_code" in combined_df.columns and "realtime_start" in combined_df.columns:
+        combined_df = combined_df.sort_values(
+            ["series_code", "realtime_start", "date"]
+        ).reset_index(drop=True)
 
-    logger.info("Combined ALFRED shape: %s, %d series", combined_df.shape, combined_df['series_code'].nunique())
+    logger.info(
+        "Combined ALFRED shape: %s, %d series",
+        combined_df.shape,
+        combined_df["series_code"].nunique(),
+    )
 
     # Resolve output path
     output_path = Path(output_path)

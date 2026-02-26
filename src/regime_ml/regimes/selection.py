@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple
 
+
 def _get(d: Dict[str, Any], path: str, default=np.nan):
     """Safe nested getter: path like 'macro_coherence.maha_median'."""
     cur = d
@@ -10,6 +11,7 @@ def _get(d: Dict[str, Any], path: str, default=np.nan):
             return default
         cur = cur[k]
     return cur
+
 
 def _soft_score(
     x: float, optimal: float, lo: float, hi: float, slack: float = 0.5
@@ -48,6 +50,7 @@ def _soft_score(
     else:  # x > hi
         return float(max(0.0, 0.5 * (hi + s - x) / s)) if s > 1e-12 else 0.0
 
+
 def select_best_hmm_model(
     results: Dict[str, Any],
     *,
@@ -82,37 +85,51 @@ def select_best_hmm_model(
 
     rows = []
     for model_id, r in results.items():
-        rows.append({
-            "model_id": model_id,
-
-            # --- FULL sample
-            "tv_valid": bool(_get(r, "transition_matrix_sanity.tv_distance_valid", False)),
-            "tv20": _get(r, "transition_matrix_sanity.tv_distance"),
-            "max_implied_duration": _get(r, "transition_matrix_sanity.max_implied_duration"),
-            "median_implied_duration": _get(r, "transition_matrix_sanity.median_implied_duration"),
-            "max_offdiag": _get(r, "transition_matrix_sanity.max_offdiag_transition"),
-
-            "min_share": _get(r, "regime_stability.min_regime_share"),
-            "max_share": _get(r, "regime_stability.max_regime_share"),
-            "n_transitions": _get(r, "regime_stability.n_transitions"),
-            "avg_persistence": _get(r, "regime_stability.avg_persistence"),
-
-            "maha_min": _get(r, "macro_coherence.maha_min"),
-            "maha_median": _get(r, "macro_coherence.maha_median"),
-            "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
-
-            "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
-
-            # --- BIC / AIC (complexity penalties)
-            "bic_full": _get(r, "bic_full"),
-
-            # --- OOS slice (structural robustness)
-            "oos_min_share": _get(r, "out_of_sample.regime_stability.min_regime_share"),
-            "oos_max_share": _get(r, "out_of_sample.regime_stability.max_regime_share"),
-            "oos_n_transitions": _get(r, "out_of_sample.regime_stability.n_transitions"),
-            "oos_avg_persistence": _get(r, "out_of_sample.regime_stability.avg_persistence"),
-            "oos_anova_r2_mean": _get(r, "out_of_sample.macro_coherence.anova_r2_mean"),
-        })
+        rows.append(
+            {
+                "model_id": model_id,
+                # --- FULL sample
+                "tv_valid": bool(
+                    _get(r, "transition_matrix_sanity.tv_distance_valid", False)
+                ),
+                "tv20": _get(r, "transition_matrix_sanity.tv_distance"),
+                "max_implied_duration": _get(
+                    r, "transition_matrix_sanity.max_implied_duration"
+                ),
+                "median_implied_duration": _get(
+                    r, "transition_matrix_sanity.median_implied_duration"
+                ),
+                "max_offdiag": _get(
+                    r, "transition_matrix_sanity.max_offdiag_transition"
+                ),
+                "min_share": _get(r, "regime_stability.min_regime_share"),
+                "max_share": _get(r, "regime_stability.max_regime_share"),
+                "n_transitions": _get(r, "regime_stability.n_transitions"),
+                "avg_persistence": _get(r, "regime_stability.avg_persistence"),
+                "maha_min": _get(r, "macro_coherence.maha_min"),
+                "maha_median": _get(r, "macro_coherence.maha_median"),
+                "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
+                "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
+                # --- BIC / AIC (complexity penalties)
+                "bic_full": _get(r, "bic_full"),
+                # --- OOS slice (structural robustness)
+                "oos_min_share": _get(
+                    r, "out_of_sample.regime_stability.min_regime_share"
+                ),
+                "oos_max_share": _get(
+                    r, "out_of_sample.regime_stability.max_regime_share"
+                ),
+                "oos_n_transitions": _get(
+                    r, "out_of_sample.regime_stability.n_transitions"
+                ),
+                "oos_avg_persistence": _get(
+                    r, "out_of_sample.regime_stability.avg_persistence"
+                ),
+                "oos_anova_r2_mean": _get(
+                    r, "out_of_sample.macro_coherence.anova_r2_mean"
+                ),
+            }
+        )
 
     df = pd.DataFrame(rows)
 
@@ -134,34 +151,51 @@ def select_best_hmm_model(
 
     # A non-stationary transition matrix has no meaningful long-run distribution;
     # regime labels have no stable economic interpretation.
-    reject(~df["tv_valid"], "transition_matrix: stationary invalid (tv_distance_valid=False)")
+    reject(
+        ~df["tv_valid"],
+        "transition_matrix: stationary invalid (tv_distance_valid=False)",
+    )
     # A regime with <3% share is economically inert — too rare to build a strategy on.
     # A regime with >80% share dominates the sample, implying near-trivial segmentation.
     reject(df["min_share"] < min_share, f"dead regime (min_share < {min_share})")
     reject(df["max_share"] > max_share, f"collapsed regime (max_share > {max_share})")
     # Implied duration >3000 days (~12 years) means the self-transition probability is
     # nearly 1 — the model cannot escape the regime; it is effectively absorbing.
-    reject(df["max_implied_duration"] > max_implied_duration, f"absorbing regime (max_implied_duration > {max_implied_duration})")
+    reject(
+        df["max_implied_duration"] > max_implied_duration,
+        f"absorbing regime (max_implied_duration > {max_implied_duration})",
+    )
     # Mahalanobis distance below the 10th percentile means at least two regimes are
     # indistinguishable in macro feature space — a degenerate, redundant solution.
-    reject(df["maha_min"] < maha_thresh, f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)")
+    reject(
+        df["maha_min"] < maha_thresh,
+        f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)",
+    )
 
     # OOS robustness: dead/collapsed regimes OOS signal overfitting to the training period.
     if df["oos_min_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
-        reject(df["oos_min_share"] < oos_min_share, f"OOS dead regime (oos_min_share < {oos_min_share})")
+        reject(
+            df["oos_min_share"] < oos_min_share,
+            f"OOS dead regime (oos_min_share < {oos_min_share})",
+        )
     if df["oos_max_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
-        reject(df["oos_max_share"] > oos_max_share, f"OOS collapsed regime (oos_max_share > {oos_max_share})")
+        reject(
+            df["oos_max_share"] > oos_max_share,
+            f"OOS collapsed regime (oos_max_share > {oos_max_share})",
+        )
 
     survivors = df[keep_mask].copy()
     rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id", "reason"])  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
 
     if survivors.empty:
-        raise ValueError("No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full.")
+        raise ValueError(
+            "No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full."
+        )
 
     # --- Soft-score bounds (from config, with defaults matching regime_config.yaml)
     _default_ss: Dict[str, Any] = {
-        "duration":    {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 0.75},
-        "turnover":    {"optimal": 0.15, "lo": 0.05, "hi": 0.30,  "slack": 1.0},
+        "duration": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 0.75},
+        "turnover": {"optimal": 0.15, "lo": 0.05, "hi": 0.30, "slack": 1.0},
         "persistence": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 1.0},
     }
     _cfg_ss: Dict[str, Any] = soft_score_cfg or {}
@@ -175,9 +209,8 @@ def select_best_hmm_model(
         return s.rank(pct=True, ascending=ascending)
 
     # Macro coherence: higher Mahalanobis separation and R² are better
-    macro = (
-        0.5 * rrank(survivors["maha_median"], ascending=True)
-        + 0.5 * rrank(survivors["anova_r2_mean"], ascending=True)
+    macro = 0.5 * rrank(survivors["maha_median"], ascending=True) + 0.5 * rrank(
+        survivors["anova_r2_mean"], ascending=True
     )
 
     # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
@@ -190,7 +223,9 @@ def select_best_hmm_model(
         if survivors["tv20"].notna().any()
         else 0.0
     )
-    off_pen = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
+    off_pen = rrank(
+        survivors["max_offdiag"], ascending=False
+    )  # lower offdiag => higher rank
     trans = 0.45 * dur_score + 0.35 * tv_score + 0.20 * off_pen
 
     # Stability: less churn, decent persistence (~90 days), not overly certain

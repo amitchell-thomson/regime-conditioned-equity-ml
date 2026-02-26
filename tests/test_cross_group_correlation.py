@@ -18,7 +18,11 @@ def _make_pc_features(
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range("2000-01-03", periods=n)
     data = rng.standard_normal((n, 4))
-    return pd.DataFrame(data, index=idx, columns=["rates_pc1", "inflation_pc1", "growth_pc1", "employment_pc1"])
+    return pd.DataFrame(
+        data,
+        index=idx,
+        columns=["rates_pc1", "inflation_pc1", "growth_pc1", "employment_pc1"],
+    )
 
 
 class TestCheckCrossGroupCorrelation:
@@ -43,18 +47,20 @@ class TestCheckCrossGroupCorrelation:
         df = pd.DataFrame(
             {
                 "rates_pc1": base,
-                "inflation_pc1": base,          # perfectly correlated with rates_pc1
-                "growth_pc1": base * -1.0,       # perfectly anti-correlated
+                "inflation_pc1": base,  # perfectly correlated with rates_pc1
+                "growth_pc1": base * -1.0,  # perfectly anti-correlated
                 "employment_pc1": np.random.default_rng(8).standard_normal(300),
             },
             index=idx,
         )
         with caplog.at_level(logging.WARNING, logger="regime_ml"):
             _check_cross_group_correlation(df, "2015-01-01", warn_threshold=0.80)
-        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("Cross-group" in m for m in warning_messages), (
-            "Expected a cross-group correlation warning"
-        )
+        warning_messages = [
+            r.message for r in caplog.records if r.levelno == logging.WARNING
+        ]
+        assert any(
+            "Cross-group" in m for m in warning_messages
+        ), "Expected a cross-group correlation warning"
 
     def test_uses_is_data_only(self, caplog):
         """Correlation is computed on IS rows only; OOS high correlation must not trigger warning."""
@@ -65,7 +71,11 @@ class TestCheckCrossGroupCorrelation:
 
         # IS portion: uncorrelated (all before train_end_date)
         data = rng.standard_normal((n, 4))
-        df = pd.DataFrame(data, index=idx, columns=["rates_pc1", "inflation_pc1", "growth_pc1", "employment_pc1"])
+        df = pd.DataFrame(
+            data,
+            index=idx,
+            columns=["rates_pc1", "inflation_pc1", "growth_pc1", "employment_pc1"],
+        )
 
         # Artificially make OOS rows perfectly correlated in two columns
         oos_mask = df.index > pd.Timestamp(train_end_date)
@@ -86,6 +96,8 @@ class TestCheckCrossGroupCorrelation:
     def test_returns_none_for_single_column(self):
         """Function returns None gracefully when only one PC column is present."""
         idx = pd.bdate_range("2000-01-03", periods=100)
-        df = pd.DataFrame({"rates_pc1": np.random.default_rng(0).standard_normal(100)}, index=idx)
+        df = pd.DataFrame(
+            {"rates_pc1": np.random.default_rng(0).standard_normal(100)}, index=idx
+        )
         result = _check_cross_group_correlation(df, "2005-01-01", warn_threshold=0.80)
         assert result is None

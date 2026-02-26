@@ -22,11 +22,12 @@ def test_macro_data_path_env_var_overrides_config(monkeypatch, tmp_path):
     monkeypatch.setenv("MACRO_DATA_PATH", str(tmp_path))
 
     from regime_ml.utils.config import load_configs
+
     cfg = load_configs()
     resolved_path = cfg["macro_data"]["regime_universe"]["data_path"]
-    assert resolved_path == str(tmp_path), (
-        f"Expected MACRO_DATA_PATH={tmp_path} to override YAML, got {resolved_path}"
-    )
+    assert resolved_path == str(
+        tmp_path
+    ), f"Expected MACRO_DATA_PATH={tmp_path} to override YAML, got {resolved_path}"
 
 
 def test_macro_data_path_not_set_uses_yaml(monkeypatch):
@@ -34,6 +35,7 @@ def test_macro_data_path_not_set_uses_yaml(monkeypatch):
     monkeypatch.delenv("MACRO_DATA_PATH", raising=False)
 
     from regime_ml.utils.config import load_configs
+
     cfg = load_configs()
     path = cfg["macro_data"]["regime_universe"]["data_path"]
     # The YAML value is a non-empty string (we don't validate it exists on disk)

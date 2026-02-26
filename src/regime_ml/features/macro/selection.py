@@ -54,7 +54,7 @@ def _check_cross_group_correlation(
     pairs = [
         (c1, c2, float(corr.loc[c1, c2]))
         for i, c1 in enumerate(cols)
-        for c2 in cols[i + 1:]
+        for c2 in cols[i + 1 :]
         if corr.loc[c1, c2] > warn_threshold
     ]
     if pairs:
@@ -97,9 +97,9 @@ def select_features(
     """
     regime_cfg = cfg.get("regimes", {})
     train_end_date: str = regime_cfg["train_end_date"]
-    n_components: dict[str, int] = (
-        regime_cfg["feature_selection"]["group_pca"]["n_components"]
-    )
+    n_components: dict[str, int] = regime_cfg["feature_selection"]["group_pca"][
+        "n_components"
+    ]
 
     logger.info(
         "Feature selection: within-group PCA | IS boundary: %s | groups: %s",
@@ -121,9 +121,8 @@ def select_features(
     )
 
     # Check for high cross-group PC correlation (non-blocking warning).
-    corr_cfg = (
-        regime_cfg.get("feature_selection", {})
-        .get("cross_group_correlation", {})
+    corr_cfg = regime_cfg.get("feature_selection", {}).get(
+        "cross_group_correlation", {}
     )
     warn_threshold = float(corr_cfg.get("warn_threshold", 0.80))
     _check_cross_group_correlation(pc_features, train_end_date, warn_threshold)

@@ -24,7 +24,9 @@ def _fit_detector(
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n_samples, n_features))
     df = pd.DataFrame(X, columns=[f"f{i}" for i in range(n_features)])
-    means, covs, scaler = initialise_emissions(df, n_clusters=n_regimes, random_state=seed)
+    means, covs, scaler = initialise_emissions(
+        df, n_clusters=n_regimes, random_state=seed
+    )
     det = HMMRegimeDetector(
         n_regimes=n_regimes,
         random_state=seed,
@@ -41,9 +43,10 @@ def _fit_detector(
 # align_states() tests
 # ---------------------------------------------------------------------------
 
+
 def test_align_states_returns_valid_permutation():
     """align_states must return a valid permutation array of length K."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     perm = align_states(ref, cand)
     K = ref.n_regimes
@@ -53,14 +56,14 @@ def test_align_states_returns_valid_permutation():
 
 def test_align_states_identity_on_same_model():
     """Aligning a model to itself should return the identity permutation."""
-    ref  = _fit_detector(seed=42)
+    ref = _fit_detector(seed=42)
     perm = align_states(ref, ref)
     np.testing.assert_array_equal(perm, np.arange(ref.n_regimes))
 
 
 def test_align_states_unfitted_reference_raises():
     """align_states must raise ValueError if the reference detector is unfitted."""
-    fitted   = _fit_detector(seed=0)
+    fitted = _fit_detector(seed=0)
     unfitted = HMMRegimeDetector(n_regimes=3)
     with pytest.raises(ValueError, match="fitted"):
         align_states(unfitted, fitted)
@@ -68,7 +71,7 @@ def test_align_states_unfitted_reference_raises():
 
 def test_align_states_unfitted_candidate_raises():
     """align_states must raise ValueError if the candidate detector is unfitted."""
-    fitted   = _fit_detector(seed=0)
+    fitted = _fit_detector(seed=0)
     unfitted = HMMRegimeDetector(n_regimes=3)
     with pytest.raises(ValueError, match="fitted"):
         align_states(fitted, unfitted)
@@ -76,7 +79,7 @@ def test_align_states_unfitted_candidate_raises():
 
 def test_align_states_n_regimes_mismatch_raises():
     """align_states must raise ValueError when n_regimes differ."""
-    ref  = _fit_detector(seed=0, n_regimes=2)
+    ref = _fit_detector(seed=0, n_regimes=2)
     cand = _fit_detector(seed=1, n_regimes=3)
     with pytest.raises(ValueError, match="mismatch"):
         align_states(ref, cand)
@@ -88,11 +91,14 @@ def test_align_states_non_full_covariance_raises():
     rng = np.random.default_rng(0)
     X = rng.standard_normal((200, 3))
     df = pd.DataFrame(X, columns=["a", "b", "c"])
-    means, covs, scaler = initialise_emissions(df, n_clusters=2, random_state=0,
-                                               covariance_type="diag")
+    means, covs, scaler = initialise_emissions(
+        df, n_clusters=2, random_state=0, covariance_type="diag"
+    )
     det = HMMRegimeDetector(
-        n_regimes=2, covariance_type="diag",
-        means=means, covars=covs,
+        n_regimes=2,
+        covariance_type="diag",
+        means=means,
+        covars=covs,
         transmat=initialise_transitions(2, p_stay=0.9),
         startprob=initialise_probabilities(2),
     )
@@ -105,9 +111,10 @@ def test_align_states_non_full_covariance_raises():
 # permute_detector() tests
 # ---------------------------------------------------------------------------
 
+
 def test_permute_detector_startprob_sums_to_one():
     """Permuted startprob must still sum to 1."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     perm = align_states(ref, cand)
     permuted = permute_detector(cand, perm)
@@ -116,7 +123,7 @@ def test_permute_detector_startprob_sums_to_one():
 
 def test_permute_detector_transmat_rows_sum_to_one():
     """Each row of the permuted transition matrix must sum to 1."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     perm = align_states(ref, cand)
     permuted = permute_detector(cand, perm)
@@ -129,7 +136,7 @@ def test_permute_detector_transmat_rows_sum_to_one():
 
 def test_permute_detector_means_reordered_correctly():
     """permute_detector must apply the same permutation to means."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     perm = align_states(ref, cand)
     permuted = permute_detector(cand, perm)
@@ -144,7 +151,7 @@ def test_permute_detector_means_reordered_correctly():
 
 def test_permute_detector_does_not_mutate_input():
     """permute_detector must not modify the original detector's means."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     original_means = cand.model.means_.copy()
     perm = align_states(ref, cand)
@@ -154,7 +161,7 @@ def test_permute_detector_does_not_mutate_input():
 
 def test_permute_detector_is_fitted():
     """Returned detector must have is_fitted == True."""
-    ref  = _fit_detector(seed=0)
+    ref = _fit_detector(seed=0)
     cand = _fit_detector(seed=1)
     perm = align_states(ref, cand)
     permuted = permute_detector(cand, perm)

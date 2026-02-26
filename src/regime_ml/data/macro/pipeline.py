@@ -32,14 +32,21 @@ def _log_stage_header(stage_num: int, total_stages: int, title: str) -> None:
 def _log_summary(label: str, df: pd.DataFrame, timing: float | None = None) -> None:
     """Log concise summary statistics."""
     rows = len(df)
-    series = df['series_code'].nunique()
+    series = df["series_code"].nunique()
     date_range = "%s to %s" % (
-        df['date'].min().strftime('%Y-%m-%d'),
-        df['date'].max().strftime('%Y-%m-%d')
+        df["date"].min().strftime("%Y-%m-%d"),
+        df["date"].max().strftime("%Y-%m-%d"),
     )
 
     if timing is not None:
-        logger.info("  - %s: %d rows, %d series, %s (%.2fs)", label, rows, series, date_range, timing)
+        logger.info(
+            "  - %s: %d rows, %d series, %s (%.2fs)",
+            label,
+            rows,
+            series,
+            date_range,
+            timing,
+        )
     else:
         logger.info("  - %s: %d rows, %d series, %s", label, rows, series, date_range)
 
@@ -99,7 +106,9 @@ def run_macro_data_pipeline() -> pd.DataFrame:
         else:
             fred_codes.append(series_cfg["id"])
 
-    logger.info("  ALFRED (point-in-time, %d series): %s", len(alfred_codes), alfred_codes)
+    logger.info(
+        "  ALFRED (point-in-time, %d series): %s", len(alfred_codes), alfred_codes
+    )
     logger.info("  FRED   (final revised,  %d series): %s", len(fred_codes), fred_codes)
 
     parts: list[pd.DataFrame] = []
@@ -125,7 +134,8 @@ def run_macro_data_pipeline() -> pd.DataFrame:
         source = "ALFRED" if code in alfred_set else "FRED"
         logger.info(
             "  %-10s  %-6s  %s -> %s",
-            code, source,
+            code,
+            source,
             str(pd.Timestamp(grp["date"].min()))[:10],
             str(pd.Timestamp(grp["date"].max()))[:10],
         )
@@ -139,7 +149,9 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     stage_start = time.time()
 
     df_selected = select_data(df_raw, macro_cfg)
-    logger.info("  - Selected %d series from config", df_selected['series_code'].nunique())
+    logger.info(
+        "  - Selected %d series from config", df_selected["series_code"].nunique()
+    )
 
     df_clean = clean_data(df_selected)
     logger.info("  - Cleaned data (types, weekends, deduplication)")
@@ -154,8 +166,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
 
     # Create master business day calendar
     master_calendar = create_master_calendar(
-        macro_cfg["lookback"]["start"],
-        macro_cfg["lookback"]["end"]
+        macro_cfg["lookback"]["start"], macro_cfg["lookback"]["end"]
     )
     logger.info("  - Created calendar: %d business days", len(master_calendar))
 
@@ -165,7 +176,9 @@ def run_macro_data_pipeline() -> pd.DataFrame:
 
     # Align to calendar with forward-fill, applying max staleness limit if configured
     max_staleness_cfg = macro_cfg.get("max_staleness_days", None)
-    df_aligned = align_to_calendar(df_stale, master_calendar, max_staleness_days=max_staleness_cfg)
+    df_aligned = align_to_calendar(
+        df_stale, master_calendar, max_staleness_days=max_staleness_cfg
+    )
     logger.info("  - Aligned to business days")
 
     # Trim each series to its own first valid observation (ragged starts).
@@ -181,9 +194,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     stage_start = time.time()
 
     report = validate_data(
-        df_processed,
-        cfg=macro_cfg,
-        expected_calendar=master_calendar
+        df_processed, cfg=macro_cfg, expected_calendar=master_calendar
     )
     logger.info("")
     print_validation_report(report)
@@ -193,12 +204,14 @@ def run_macro_data_pipeline() -> pd.DataFrame:
 
     # Check if validation passed
     if report["status"] != "PASS":
-        logger.warning("Validation FAILED — %d critical issue(s):", len(report['issues']))
-        for issue in report['issues']:
+        logger.warning(
+            "Validation FAILED — %d critical issue(s):", len(report["issues"])
+        )
+        for issue in report["issues"]:
             logger.warning("  [ISSUE] %s", issue)
     if report["warnings"]:
-        logger.warning("Validation warnings (%d):", len(report['warnings']))
-        for warning in report['warnings']:
+        logger.warning("Validation warnings (%d):", len(report["warnings"]))
+        for warning in report["warnings"]:
             logger.warning("  [WARN] %s", warning)
 
     # =================================================================
@@ -229,7 +242,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     logger.info("=" * 100)
     logger.info("Total time: %.2fs", total_time)
     logger.info("Output: %s", output_path)
-    logger.info("Status: %s", 'PASS' if report['status'] == 'PASS' else 'FAIL')
+    logger.info("Status: %s", "PASS" if report["status"] == "PASS" else "FAIL")
     logger.info("=" * 100)
 
     return df_processed

@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import pandas as pd
 
+
 class BaseTransform(ABC):
     """
     Base class for all feature transforms.
-    
+
     Design principles:
     1. Transforms operate on Series, not DataFrames (single column in, single column out)
     2. Support for staleness-aware computation
@@ -16,7 +17,7 @@ class BaseTransform(ABC):
     def __init__(self, **params):
         """
         Initialize transform with parameters.
-        
+
         Common parameters:
             window: int - lookback window for rolling operations
             min_periods: int - minimum observations required
@@ -43,19 +44,19 @@ class BaseTransform(ABC):
         self,
         series: pd.Series,
         is_new_data: Optional[pd.Series] = None,
-        staleness_mode: str = "strict"
+        staleness_mode: str = "strict",
     ) -> pd.Series:
         """
         Apply transform to a series.
-        
+
         Args:
             series: Input series with DatetimeIndex
             is_new_data: Boolean series indicating actual vs forward-filled data
-            staleness_mode: 
+            staleness_mode:
                 - 'strict': Compute only on actual data points, then forward-fill
                 - 'ignore': Ignore staleness and compute on all data (could be computing of forward-filled data)
                 - 'weighted': Weight by data freshness
-        
+
         Returns:
             Transformed series with same index as input
         """
@@ -99,7 +100,7 @@ class BaseTransform(ABC):
 class ChainedTransform(BaseTransform):
     """
     Chain multiple transforms together.
-    
+
     Example:
         transform = Diff(periods=21).chain(ZScore(window=252))
         # Equivalent to: z_score(diff(x, 21), 252)
@@ -112,7 +113,7 @@ class ChainedTransform(BaseTransform):
     def _validate_params(self) -> None:
         if not self.transforms:
             raise ValueError("ChainedTransform must have at least one transform")
-    
+
     def _compute(self, series: pd.Series) -> pd.Series:
         # Disabled: calling _compute() directly on a ChainedTransform bypasses the
         # staleness handling in each constituent transform's .transform() method.
@@ -122,12 +123,12 @@ class ChainedTransform(BaseTransform):
             "Use .transform(series, is_new_data, staleness_mode) to preserve "
             "staleness-aware computation in each constituent transform."
         )
-    
+
     def transform(
         self,
         series: pd.Series,
         is_new_data: Optional[pd.Series] = None,
-        staleness_mode: str = "strict"
+        staleness_mode: str = "strict",
     ) -> pd.Series:
         """Apply transforms sequentially."""
         result = series

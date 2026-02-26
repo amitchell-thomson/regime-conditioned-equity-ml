@@ -10,6 +10,7 @@ from regime_ml.regimes.selection import _soft_score
 # Weight integrity
 # ---------------------------------------------------------------------------
 
+
 class TestScoringWeights:
     def test_default_weights_sum_to_one(self):
         """The five default scoring weights in select_best_hmm_model must sum to 1.0."""
@@ -38,6 +39,7 @@ class TestScoringWeights:
 # ---------------------------------------------------------------------------
 # _soft_score tests
 # ---------------------------------------------------------------------------
+
 
 class TestSoftScore:
     def test_returns_one_at_optimal(self):

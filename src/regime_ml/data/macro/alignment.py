@@ -9,7 +9,9 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def add_staleness_indicators(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
+def add_staleness_indicators(
+    df: pd.DataFrame, calendar: pd.DatetimeIndex
+) -> pd.DataFrame:
     """
     Add metadata about the data freshness before forward-filling.
     This preserves the information about when the data was actually released.
@@ -50,7 +52,9 @@ def add_staleness_indicators(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd
             return "monthly"
         return "irregular"
 
-    df["native_freq"] = df.groupby("series_code")["date"].transform(lambda x: infer_freq(x))
+    df["native_freq"] = df.groupby("series_code")["date"].transform(
+        lambda x: infer_freq(x)
+    )
 
     # Add observation sequence number (at native frequency)
     df["obs_number"] = df.groupby("series_code").cumcount() + 1
@@ -79,48 +83,57 @@ def align_to_calendar(
     """
     aligned_series = []
 
-    all_series = df['series_code'].unique()
+    all_series = df["series_code"].unique()
     logger.info("Aligning %d series to calendar...", len(all_series))
     for series_code in all_series:
-        series_df = df[df['series_code'] == series_code].set_index('date')
+        series_df = df[df["series_code"] == series_code].set_index("date")
 
         # Reindex to master calendar
         aligned = series_df.reindex(calendar)
 
         # Forward-fill values AND metadata
-        aligned['value'] = aligned['value'].ffill()
-        aligned['series_code'] = series_code
-        aligned['series_name'] = aligned['series_name'].ffill()
-        aligned['category'] = aligned['category'].ffill()
-        aligned['native_freq'] = aligned['native_freq'].ffill()
-        aligned['obs_number'] = aligned['obs_number'].ffill()
+        aligned["value"] = aligned["value"].ffill()
+        aligned["series_code"] = series_code
+        aligned["series_name"] = aligned["series_name"].ffill()
+        aligned["category"] = aligned["category"].ffill()
+        aligned["native_freq"] = aligned["native_freq"].ffill()
+        aligned["obs_number"] = aligned["obs_number"].ffill()
 
         # is_new_data stays as-is (True where data updated, NaN elsewhere)
         # This is the key: you can see which days had real updates!
 
         # Add days since last update (vectorized: O(T) instead of O(T²))
         # Each run of forward-filled rows forms a group; cumcount gives elapsed days.
-        is_new = aligned['is_new_data'].notna()
+        is_new = aligned["is_new_data"].notna()
         group_id = is_new.cumsum()  # increments at every real observation
-        aligned['days_since_update'] = aligned.groupby(group_id).cumcount()
+        aligned["days_since_update"] = aligned.groupby(group_id).cumcount()
 
         # Apply max staleness limit: NaN out values that are too stale
         if max_staleness_days is not None:
-            native_freq_notnull = aligned['native_freq'].dropna()
-            freq = native_freq_notnull.iloc[0] if not native_freq_notnull.empty else 'unknown'
-            threshold = max_staleness_days.get(freq, max_staleness_days.get('unknown', 65))
-            stale_mask = aligned['days_since_update'] > threshold
+            native_freq_notnull = aligned["native_freq"].dropna()
+            freq = (
+                native_freq_notnull.iloc[0]
+                if not native_freq_notnull.empty
+                else "unknown"
+            )
+            threshold = max_staleness_days.get(
+                freq, max_staleness_days.get("unknown", 65)
+            )
+            stale_mask = aligned["days_since_update"] > threshold
             if stale_mask.any():
-                aligned.loc[stale_mask, 'value'] = np.nan
+                aligned.loc[stale_mask, "value"] = np.nan
                 logger.debug(
                     "Series %s: NaN-out %d excessively stale rows (freq=%s, threshold=%d days)",
-                    series_code, int(stale_mask.sum()), freq, threshold
+                    series_code,
+                    int(stale_mask.sum()),
+                    freq,
+                    threshold,
                 )
 
         aligned_series.append(aligned)
 
     df_final = pd.concat(aligned_series)
-    return df_final.reset_index().rename(columns={'index': 'date'})
+    return df_final.reset_index().rename(columns={"index": "date"})
 
 
 def build_realtime_series(
@@ -166,7 +179,8 @@ def build_realtime_series(
 
     if alfred_df.empty:
         raise ValueError(
-            "build_realtime_series: no data after filtering to series_codes=%s" % series_codes
+            "build_realtime_series: no data after filtering to series_codes=%s"
+            % series_codes
         )
 
     results = []
@@ -184,17 +198,20 @@ def build_realtime_series(
             best_obs_date = available["date"].max()
             candidates = available[available["date"] == best_obs_date]
             best_row = candidates.loc[candidates["realtime_start"].idxmax()]
-            rows.append({
-                "series_code": code,
-                "date": pub_date,           # causal date = publication date
-                "value": best_row["value"],
-                "series_name": best_row["series_name"],
-                "category": best_row["category"],
-            })
+            rows.append(
+                {
+                    "series_code": code,
+                    "date": pub_date,  # causal date = publication date
+                    "value": best_row["value"],
+                    "series_name": best_row["series_name"],
+                    "category": best_row["category"],
+                }
+            )
 
         logger.debug(
             "build_realtime_series: %s -> %d point-in-time observations",
-            code, len(rows)
+            code,
+            len(rows),
         )
         if rows:
             results.append(pd.DataFrame(rows))
@@ -208,6 +225,7 @@ def build_realtime_series(
     output = pd.concat(results, ignore_index=True)
     logger.info(
         "build_realtime_series: reconstructed %d point-in-time rows for %d series",
-        len(output), output["series_code"].nunique()
+        len(output),
+        output["series_code"].nunique(),
     )
     return output

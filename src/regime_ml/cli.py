@@ -36,7 +36,10 @@ def _register_pipelines() -> None:
     from regime_ml.regimes.pipeline import run_regime_pipeline
 
     _PIPELINE_REGISTRY["data"] = ("Macro data pipeline", run_macro_data_pipeline)
-    _PIPELINE_REGISTRY["features"] = ("Macro feature pipeline", run_macro_feature_pipeline)
+    _PIPELINE_REGISTRY["features"] = (
+        "Macro feature pipeline",
+        run_macro_feature_pipeline,
+    )
     _PIPELINE_REGISTRY["regime"] = ("Regime detection pipeline", run_regime_pipeline)
 
 
@@ -46,7 +49,11 @@ def _setup_logging(level: str) -> None:
         level=level_int,
         format="%(message)s",
         datefmt="[%X]",
-        handlers=[RichHandler(console=console, rich_tracebacks=True, show_path=level == "DEBUG")],
+        handlers=[
+            RichHandler(
+                console=console, rich_tracebacks=True, show_path=level == "DEBUG"
+            )
+        ],
         force=True,
     )
     # Silence noisy third-party loggers unless the user asked for DEBUG
@@ -62,7 +69,9 @@ def _run_pipeline(name: str, fn: Callable, log_level: str, **kwargs) -> int:
     try:
         result = fn(**kwargs)
         elapsed = time.perf_counter() - start
-        console.print(f"[green]✓[/green] {name} completed in [bold]{elapsed:.1f}s[/bold]")
+        console.print(
+            f"[green]✓[/green] {name} completed in [bold]{elapsed:.1f}s[/bold]"
+        )
         if result is not None and hasattr(result, "shape"):
             console.print(f"  Output shape: [dim]{result.shape}[/dim]")
         return 0
@@ -131,6 +140,7 @@ def main() -> None:
         kwargs = {}
         if step == "regime" and args.log_dir is not None:
             from pathlib import Path
+
             kwargs["log_dir"] = Path(args.log_dir)
         code = _run_pipeline(name, fn, args.log_level, **kwargs)
         if code != 0:

@@ -43,10 +43,12 @@ def test_rank_deficient_cluster_is_still_pd():
     """Ledoit-Wolf handles n_points < n_features (rank-deficient case) and returns PD cov."""
     # 3 features, cluster with only 2 points — rank-deficient sample covariance
     rng = np.random.default_rng(7)
-    X = np.vstack([
-        rng.standard_normal((2, 3)),            # tiny cluster — rank-deficient sample cov
-        rng.standard_normal((200, 3)) + 10.0,   # large, well-separated cluster
-    ])
+    X = np.vstack(
+        [
+            rng.standard_normal((2, 3)),  # tiny cluster — rank-deficient sample cov
+            rng.standard_normal((200, 3)) + 10.0,  # large, well-separated cluster
+        ]
+    )
     df = pd.DataFrame(X, columns=["a", "b", "c"])
     _, covs, _ = initialise_emissions(df, n_clusters=2, random_state=0)
     for k in range(covs.shape[0]):
@@ -74,14 +76,16 @@ def test_degenerate_cluster_uses_identity_fallback_and_logs_warning(caplog):
 def test_diag_covariance_type_returns_correct_shape():
     """covariance_type='diag' must return shape (n_clusters, n_features)."""
     df = _make_df(100, d=5)
-    _, covs, _ = initialise_emissions(df, n_clusters=2, random_state=42,
-                                      covariance_type="diag")
+    _, covs, _ = initialise_emissions(
+        df, n_clusters=2, random_state=42, covariance_type="diag"
+    )
     assert covs.shape == (2, 5)
 
 
 def test_diag_covariance_values_are_positive():
     """Diagonal covariance entries must all be positive."""
     df = _make_df(100, d=4)
-    _, covs, _ = initialise_emissions(df, n_clusters=2, random_state=42,
-                                      covariance_type="diag")
+    _, covs, _ = initialise_emissions(
+        df, n_clusters=2, random_state=42, covariance_type="diag"
+    )
     assert (covs > 0).all()

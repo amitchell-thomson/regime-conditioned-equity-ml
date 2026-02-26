@@ -13,7 +13,7 @@ def roll_weekend_releases(df: pd.DataFrame) -> pd.DataFrame:
 
     Args:
         df: DataFrame with 'date' column
-    
+
     Returns:
         pd.DataFrame: The dataframe with weekend dates rolled to next business day.
     """
@@ -39,7 +39,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     Args:
         df: Raw macro dataframe
-    
+
     Returns:
         pd.DataFrame: The cleaned dataframe.
     """
@@ -78,10 +78,10 @@ def trim_to_own_start(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Long-format DataFrame with per-series leading NaN rows removed.
     """
-    first_valid = df[df['value'].notna()].groupby('series_code')['date'].min()
-    df_with_start = df.join(first_valid.rename('_series_start'), on='series_code')
-    result = df_with_start[df_with_start['date'] >= df_with_start['_series_start']]
-    result = result.drop(columns='_series_start').reset_index(drop=True)
+    first_valid = df[df["value"].notna()].groupby("series_code")["date"].min()
+    df_with_start = df.join(first_valid.rename("_series_start"), on="series_code")
+    result = df_with_start[df_with_start["date"] >= df_with_start["_series_start"]]
+    result = result.drop(columns="_series_start").reset_index(drop=True)
     n_removed = len(df) - len(result)
     logger.info(
         "trim_to_own_start: removed %d pre-start rows; series start dates:",
@@ -96,25 +96,27 @@ def trim_to_common_start(df: pd.DataFrame) -> pd.DataFrame:
     """
     Trim all series to start at the latest start date across all series.
     Ensures all series have aligned start date.
-    
+
     Args:
         df: DataFrame with 'date', 'series_code', and 'value' columns
-    
+
     Returns:
         pd.DataFrame: Trimmed dataframe
     """
     # Find first valid date for each series
-    first_dates = df[df['value'].notna()].groupby('series_code')['date'].min()
-    
+    first_dates = df[df["value"].notna()].groupby("series_code")["date"].min()
+
     # Get the latest of these first dates
     latest_start_date = first_dates.max()
-    
+
     logger.info("Trimming to common start date: %s", latest_start_date.date())
 
     # Filter to start from that date
-    result: pd.DataFrame = df[df['date'] >= latest_start_date].reset_index(drop=True)  # type: ignore[index]  # pandas boolean indexing — mypy cannot narrow DataFrame.__getitem__ from Series[bool]
+    result: pd.DataFrame = df[df["date"] >= latest_start_date].reset_index(drop=True)  # type: ignore[index]  # pandas boolean indexing — mypy cannot narrow DataFrame.__getitem__ from Series[bool]
 
     rows_removed = len(df) - len(result)
-    logger.info("Removed %d dates per series", int(rows_removed / df['series_code'].nunique()))
-    
+    logger.info(
+        "Removed %d dates per series", int(rows_removed / df["series_code"].nunique())
+    )
+
     return result

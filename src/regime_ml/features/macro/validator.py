@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ValidationResult:
     """Container for validation results."""
+
     passed: bool
     message: str
     severity: str  # 'info', 'warning', 'error'
@@ -49,9 +50,7 @@ class MacroFeatureValidator:
     """
 
     def __init__(
-        self,
-        feature_data: pd.DataFrame,
-        frequency_map: Optional[Dict[str, str]] = None
+        self, feature_data: pd.DataFrame, frequency_map: Optional[Dict[str, str]] = None
     ):
         """
         Initialize validator.
@@ -69,21 +68,27 @@ class MacroFeatureValidator:
         else:
             # Default fallback if no frequency map provided
             self.frequency_map = {
-                'VIXCLS': 'daily',
-                'DGS2': 'daily',
-                'DGS10': 'daily',
-                'T10Y3M': 'daily',
-                'NFCI': 'weekly',
-                'ICSA': 'weekly',
-                'CFNAI': 'monthly',
-                'INDPRO': 'monthly',
-                'PCEPILFE': 'monthly'
+                "VIXCLS": "daily",
+                "DGS2": "daily",
+                "DGS10": "daily",
+                "T10Y3M": "daily",
+                "NFCI": "weekly",
+                "ICSA": "weekly",
+                "CFNAI": "monthly",
+                "INDPRO": "monthly",
+                "PCEPILFE": "monthly",
             }
 
         # Categorize by frequency
-        self.daily_indicators = [k for k, v in self.frequency_map.items() if v == 'daily']
-        self.weekly_indicators = [k for k, v in self.frequency_map.items() if v == 'weekly']
-        self.monthly_indicators = [k for k, v in self.frequency_map.items() if v == 'monthly']
+        self.daily_indicators = [
+            k for k, v in self.frequency_map.items() if v == "daily"
+        ]
+        self.weekly_indicators = [
+            k for k, v in self.frequency_map.items() if v == "weekly"
+        ]
+        self.monthly_indicators = [
+            k for k, v in self.frequency_map.items() if v == "monthly"
+        ]
 
         self.results: List[ValidationResult] = []
 
@@ -123,53 +128,59 @@ class MacroFeatureValidator:
 
         # Check index type
         if isinstance(self.df.index, pd.DatetimeIndex):
-            self.results.append(ValidationResult(
-                passed=True,
-                message="Index is DatetimeIndex",
-                severity='info',
-                details={'type': str(type(self.df.index))}
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="Index is DatetimeIndex",
+                    severity="info",
+                    details={"type": str(type(self.df.index))},
+                )
+            )
             logger.info("[PASS] Index is DatetimeIndex")
         else:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="Index is not DatetimeIndex: %s" % type(self.df.index),
-                severity='error'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="Index is not DatetimeIndex: %s" % type(self.df.index),
+                    severity="error",
+                )
+            )
             logger.warning("[FAIL] Index type: %s", type(self.df.index))
 
         # Check for duplicates
         if not self.df.index.duplicated().any():
-            self.results.append(ValidationResult(
-                passed=True,
-                message="No duplicate dates in index",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True, message="No duplicate dates in index", severity="info"
+                )
+            )
             logger.info("[PASS] No duplicate dates")
         else:
             n_dupes = self.df.index.duplicated().sum()
-            self.results.append(ValidationResult(
-                passed=False,
-                message="Found %d duplicate dates" % n_dupes,
-                severity='error',
-                details={'n_duplicates': n_dupes}
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="Found %d duplicate dates" % n_dupes,
+                    severity="error",
+                    details={"n_duplicates": n_dupes},
+                )
+            )
             logger.warning("[FAIL] Found %d duplicate dates", n_dupes)
 
         # Check if sorted
         if self.df.index.is_monotonic_increasing:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="Index is sorted",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True, message="Index is sorted", severity="info"
+                )
+            )
             logger.info("[PASS] Index is sorted")
         else:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="Index is not sorted",
-                severity='warning'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False, message="Index is not sorted", severity="warning"
+                )
+            )
             logger.warning("[WARN] Index is not sorted")
 
         # Check frequency against master calendar (US business days)
@@ -180,9 +191,7 @@ class MacroFeatureValidator:
 
                 # Generate expected business day calendar for the date range
                 expected_calendar = pd.date_range(
-                    start=self.df.index.min(),
-                    end=self.df.index.max(),
-                    freq=us_bd
+                    start=self.df.index.min(), end=self.df.index.max(), freq=us_bd
                 )
 
                 # Check alignment with master calendar
@@ -193,37 +202,50 @@ class MacroFeatureValidator:
                 extra_dates = index_set - expected_set
 
                 if len(missing_dates) == 0 and len(extra_dates) == 0:
-                    self.results.append(ValidationResult(
-                        passed=True,
-                        message="Index aligns with US business day calendar",
-                        severity='info'
-                    ))
-                    logger.info("[PASS] Frequency: US business days (USFederalHolidayCalendar)")
+                    self.results.append(
+                        ValidationResult(
+                            passed=True,
+                            message="Index aligns with US business day calendar",
+                            severity="info",
+                        )
+                    )
+                    logger.info(
+                        "[PASS] Frequency: US business days (USFederalHolidayCalendar)"
+                    )
                 else:
                     details = {}
                     if len(missing_dates) > 0:
-                        details['missing_dates'] = len(missing_dates)
+                        details["missing_dates"] = len(missing_dates)
                     if len(extra_dates) > 0:
-                        details['extra_dates'] = len(extra_dates)
+                        details["extra_dates"] = len(extra_dates)
 
-                    self.results.append(ValidationResult(
-                        passed=False,
-                        message="Index does not align with US business day calendar",
-                        severity='warning',
-                        details=details
-                    ))
+                    self.results.append(
+                        ValidationResult(
+                            passed=False,
+                            message="Index does not align with US business day calendar",
+                            severity="warning",
+                            details=details,
+                        )
+                    )
 
                     if len(missing_dates) > 0:
-                        logger.warning("[WARN] Missing %d expected business days", len(missing_dates))
+                        logger.warning(
+                            "[WARN] Missing %d expected business days",
+                            len(missing_dates),
+                        )
                     if len(extra_dates) > 0:
-                        logger.warning("[WARN] Contains %d non-business days", len(extra_dates))
+                        logger.warning(
+                            "[WARN] Contains %d non-business days", len(extra_dates)
+                        )
 
             except Exception as e:
-                self.results.append(ValidationResult(
-                    passed=False,
-                    message="Could not validate calendar alignment: %s" % str(e),
-                    severity='warning'
-                ))
+                self.results.append(
+                    ValidationResult(
+                        passed=False,
+                        message="Could not validate calendar alignment: %s" % str(e),
+                        severity="warning",
+                    )
+                )
                 logger.warning("[WARN] Calendar validation failed: %s", str(e))
         else:
             logger.warning("[WARN] Cannot validate frequency (empty or invalid index)")
@@ -237,28 +259,32 @@ class MacroFeatureValidator:
         total_values = self.df.size
         pct_null = 100 * total_nulls / total_values
 
-        logger.info("Total nulls: %d / %d (%.2f%%)", total_nulls, total_values, pct_null)
+        logger.info(
+            "Total nulls: %d / %d (%.2f%%)", total_nulls, total_values, pct_null
+        )
 
         # Check for features with high null percentage
         null_pct_by_col = 100 * self.df.isnull().sum() / len(self.df)
         high_null_cols = null_pct_by_col[null_pct_by_col > 20]
 
         if len(high_null_cols) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d features have >20%% nulls" % len(high_null_cols),
-                severity='error',
-                details={'features': high_null_cols.to_dict()}
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d features have >20%% nulls" % len(high_null_cols),
+                    severity="error",
+                    details={"features": high_null_cols.to_dict()},
+                )
+            )
             logger.warning("[FAIL] %d features with >20%% nulls:", len(high_null_cols))
             for col, pct in high_null_cols.items():
                 logger.warning("       %s: %.1f%%", col, pct)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="No features with >20% nulls",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True, message="No features with >20% nulls", severity="info"
+                )
+            )
             logger.info("[PASS] No features with >20%% nulls")
 
         # Check early burn-in period
@@ -271,25 +297,35 @@ class MacroFeatureValidator:
                 if pd.notna(first_complete_idx) and pd.notna(first_idx):  # type: ignore[arg-type]  # pd.notna accepts Index scalars; mypy does not narrow from Index.min()
                     try:
                         burn_in_timedelta = first_complete_idx - first_idx  # type: ignore[operator]  # Timestamp subtraction; mypy cannot infer return type from Index.min()
-                        burn_in_days = burn_in_timedelta.days if hasattr(burn_in_timedelta, 'days') else 0  # type: ignore[union-attr]  # timedelta .days access; union-typed after subtraction
+                        burn_in_days = burn_in_timedelta.days if hasattr(burn_in_timedelta, "days") else 0  # type: ignore[union-attr]  # timedelta .days access; union-typed after subtraction
                         burn_in_years = burn_in_days / 365.25
 
                         logger.info("  First complete row: %s", first_complete_idx)
-                        logger.info("  Burn-in period: %d days (%.1f years)", burn_in_days, burn_in_years)
+                        logger.info(
+                            "  Burn-in period: %d days (%.1f years)",
+                            burn_in_days,
+                            burn_in_years,
+                        )
 
                         if burn_in_years > 10:
-                            self.results.append(ValidationResult(
-                                passed=False,
-                                message="Burn-in period too long: %.1f years" % burn_in_years,
-                                severity='warning',
-                                details={'burn_in_years': burn_in_years}
-                            ))
+                            self.results.append(
+                                ValidationResult(
+                                    passed=False,
+                                    message="Burn-in period too long: %.1f years"
+                                    % burn_in_years,
+                                    severity="warning",
+                                    details={"burn_in_years": burn_in_years},
+                                )
+                            )
                         else:
-                            self.results.append(ValidationResult(
-                                passed=True,
-                                message="Burn-in period acceptable: %.1f years" % burn_in_years,
-                                severity='info'
-                            ))
+                            self.results.append(
+                                ValidationResult(
+                                    passed=True,
+                                    message="Burn-in period acceptable: %.1f years"
+                                    % burn_in_years,
+                                    severity="info",
+                                )
+                            )
                     except (TypeError, AttributeError):
                         pass  # Skip burn-in calculation if types don't match
 
@@ -298,7 +334,7 @@ class MacroFeatureValidator:
         logger.info("\n3. Z-Score Distributions")
         logger.info("-" * 40)
 
-        zscore_cols = [col for col in self.df.columns if 'zscore' in col.lower()]
+        zscore_cols = [col for col in self.df.columns if "zscore" in col.lower()]
 
         if len(zscore_cols) == 0:
             logger.info("  No z-score features found")
@@ -323,23 +359,30 @@ class MacroFeatureValidator:
                 issues.append("%s: std=%.2f (expected ≈1)" % (col, std))
 
         if len(issues) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d z-score features have unusual distributions" % len(issues),
-                severity='warning',
-                details={'issues': issues[:5]}
-            ))
-            logger.warning("[WARN] %d features with unusual distributions:", len(issues))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d z-score features have unusual distributions"
+                    % len(issues),
+                    severity="warning",
+                    details={"issues": issues[:5]},
+                )
+            )
+            logger.warning(
+                "[WARN] %d features with unusual distributions:", len(issues)
+            )
             for issue in issues[:5]:
                 logger.warning("       %s", issue)
             if len(issues) > 5:
                 logger.warning("       ... and %d more", len(issues) - 5)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="All z-score distributions look normal",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="All z-score distributions look normal",
+                    severity="info",
+                )
+            )
             logger.info("[PASS] Z-score distributions look normal")
 
     def _check_outliers(self) -> None:
@@ -358,24 +401,33 @@ class MacroFeatureValidator:
 
         if len(extreme_counts) > 0:
             total_extreme = sum(extreme_counts.values())
-            self.results.append(ValidationResult(
-                passed=False,
-                message="Found %d extreme values (|value| > %d)" % (total_extreme, extreme_threshold),
-                severity='warning',
-                details={'features': extreme_counts}
-            ))
-            logger.warning("[WARN] Features with extreme values (|value| > %d):", extreme_threshold)
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="Found %d extreme values (|value| > %d)"
+                    % (total_extreme, extreme_threshold),
+                    severity="warning",
+                    details={"features": extreme_counts},
+                )
+            )
+            logger.warning(
+                "[WARN] Features with extreme values (|value| > %d):", extreme_threshold
+            )
             for col, count in list(extreme_counts.items())[:5]:
                 pct = 100 * count / self.df[col].notna().sum()
                 logger.warning("       %s: %d values (%.2f%%)", col, count, pct)
             if len(extreme_counts) > 5:
-                logger.warning("       ... and %d more features", len(extreme_counts) - 5)
+                logger.warning(
+                    "       ... and %d more features", len(extreme_counts) - 5
+                )
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="No extreme outliers (|value| > %d)" % extreme_threshold,
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="No extreme outliers (|value| > %d)" % extreme_threshold,
+                    severity="info",
+                )
+            )
             logger.info("[PASS] No extreme outliers")
 
     def _check_monthly_indicators(self) -> None:
@@ -383,8 +435,11 @@ class MacroFeatureValidator:
         logger.info("\n5. Monthly Indicators")
         logger.info("-" * 40)
 
-        monthly_features = [col for col in self.df.columns
-                           if any(ind in col for ind in self.monthly_indicators)]
+        monthly_features = [
+            col
+            for col in self.df.columns
+            if any(ind in col for ind in self.monthly_indicators)
+        ]
 
         if len(monthly_features) == 0:
             logger.info("  No monthly indicator features found")
@@ -406,24 +461,34 @@ class MacroFeatureValidator:
             # Monthly data should change ~21 times per year = ~0.083 change rate
             # Daily data changes ~252 times per year = ~1.0 change rate
             if change_rate > 0.15:  # More than twice expected for monthly
-                issues.append("%s: changes %d times (%.2f%% rate)" % (col, changes, change_rate * 100))
+                issues.append(
+                    "%s: changes %d times (%.2f%% rate)"
+                    % (col, changes, change_rate * 100)
+                )
 
         if len(issues) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d monthly features show daily variation" % len(issues),
-                severity='error',
-                details={'issues': issues[:3]}
-            ))
-            logger.warning("[FAIL] %d features show daily variation (expected monthly steps):", len(issues))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d monthly features show daily variation" % len(issues),
+                    severity="error",
+                    details={"issues": issues[:3]},
+                )
+            )
+            logger.warning(
+                "[FAIL] %d features show daily variation (expected monthly steps):",
+                len(issues),
+            )
             for issue in issues[:3]:
                 logger.warning("       %s", issue)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="Monthly features show step-function behavior",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="Monthly features show step-function behavior",
+                    severity="info",
+                )
+            )
             logger.info("[PASS] Monthly features show expected step-function behavior")
 
     def _check_weekly_indicators(self) -> None:
@@ -431,8 +496,11 @@ class MacroFeatureValidator:
         logger.info("\n6. Weekly Indicators")
         logger.info("-" * 40)
 
-        weekly_features = [col for col in self.df.columns
-                          if any(ind in col for ind in self.weekly_indicators)]
+        weekly_features = [
+            col
+            for col in self.df.columns
+            if any(ind in col for ind in self.weekly_indicators)
+        ]
 
         if len(weekly_features) == 0:
             logger.info("  No weekly indicator features found")
@@ -455,24 +523,32 @@ class MacroFeatureValidator:
             # Weekly data should change ~52 times per year = ~0.21 change rate
             # Allow range of 0.10 to 0.35 for weekly
             if change_rate < 0.10 or change_rate > 0.35:
-                issues.append("%s: changes %d times (%.2f%% rate)" % (col, changes, change_rate * 100))
+                issues.append(
+                    "%s: changes %d times (%.2f%% rate)"
+                    % (col, changes, change_rate * 100)
+                )
 
         if len(issues) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d weekly features show unexpected variation" % len(issues),
-                severity='warning',
-                details={'issues': issues[:3]}
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d weekly features show unexpected variation"
+                    % len(issues),
+                    severity="warning",
+                    details={"issues": issues[:3]},
+                )
+            )
             logger.warning("[WARN] %d features show unexpected variation:", len(issues))
             for issue in issues[:3]:
                 logger.warning("       %s", issue)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="Weekly features show expected step-function behavior",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="Weekly features show expected step-function behavior",
+                    severity="info",
+                )
+            )
             logger.info("[PASS] Weekly features show expected step-function behavior")
 
     def _check_daily_indicators(self) -> None:
@@ -480,8 +556,11 @@ class MacroFeatureValidator:
         logger.info("\n7. Daily Indicators")
         logger.info("-" * 40)
 
-        daily_features = [col for col in self.df.columns
-                         if any(ind in col for ind in self.daily_indicators)]
+        daily_features = [
+            col
+            for col in self.df.columns
+            if any(ind in col for ind in self.daily_indicators)
+        ]
 
         if len(daily_features) == 0:
             logger.info("  No daily indicator features found")
@@ -501,24 +580,31 @@ class MacroFeatureValidator:
 
             # Daily data should have high change rate (>0.5)
             if change_rate < 0.5:
-                issues.append("%s: only changes %d times (%.2f%% rate)" % (col, changes, change_rate * 100))
+                issues.append(
+                    "%s: only changes %d times (%.2f%% rate)"
+                    % (col, changes, change_rate * 100)
+                )
 
         if len(issues) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d daily features show low variation" % len(issues),
-                severity='warning',
-                details={'issues': issues[:3]}
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d daily features show low variation" % len(issues),
+                    severity="warning",
+                    details={"issues": issues[:3]},
+                )
+            )
             logger.warning("[WARN] %d features show low variation:", len(issues))
             for issue in issues[:3]:
                 logger.warning("       %s", issue)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="Daily features show expected variation",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="Daily features show expected variation",
+                    severity="info",
+                )
+            )
             logger.info("[PASS] Daily features show expected variation")
 
     def _check_feature_variance(self) -> None:
@@ -535,13 +621,18 @@ class MacroFeatureValidator:
 
             if isinstance(low_var_features, pd.Series) and len(low_var_features) > 0:
                 low_var_dict = dict(low_var_features)
-                self.results.append(ValidationResult(
-                    passed=False,
-                    message="%d features have very low variance (<%.2f)" % (len(low_var_features), low_var_threshold),
-                    severity='warning',
-                    details={'features': low_var_dict}
-                ))
-                logger.warning("[WARN] %d features with very low variance:", len(low_var_features))
+                self.results.append(
+                    ValidationResult(
+                        passed=False,
+                        message="%d features have very low variance (<%.2f)"
+                        % (len(low_var_features), low_var_threshold),
+                        severity="warning",
+                        details={"features": low_var_dict},
+                    )
+                )
+                logger.warning(
+                    "[WARN] %d features with very low variance:", len(low_var_features)
+                )
                 for col, var in list(low_var_dict.items())[:5]:
                     logger.warning("       %s: variance=%.6f", col, var)
             else:
@@ -572,21 +663,27 @@ class MacroFeatureValidator:
                     issues.append("%s: %d large jumps" % (col, large_jumps))
 
         if len(issues) > 0:
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d features have discontinuities" % len(issues),
-                severity='warning',
-                details={'issues': issues[:3]}
-            ))
-            logger.warning("[WARN] %d features with potential discontinuities:", len(issues))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d features have discontinuities" % len(issues),
+                    severity="warning",
+                    details={"issues": issues[:3]},
+                )
+            )
+            logger.warning(
+                "[WARN] %d features with potential discontinuities:", len(issues)
+            )
             for issue in issues[:3]:
                 logger.warning("       %s", issue)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="No major temporal discontinuities",
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="No major temporal discontinuities",
+                    severity="info",
+                )
+            )
             logger.info("[PASS] No major temporal discontinuities")
 
     def _check_feature_correlations(self) -> None:
@@ -607,11 +704,13 @@ class MacroFeatureValidator:
             for j in range(i + 1, len(corr_matrix.columns)):
                 corr_value = corr_matrix.iloc[i, j]
                 if corr_value > threshold:
-                    high_corr_pairs.append({
-                        'feature_1': corr_matrix.columns[i],
-                        'feature_2': corr_matrix.columns[j],
-                        'correlation': corr_value
-                    })
+                    high_corr_pairs.append(
+                        {
+                            "feature_1": corr_matrix.columns[i],
+                            "feature_2": corr_matrix.columns[j],
+                            "correlation": corr_value,
+                        }
+                    )
 
         # Get max correlation (excluding diagonal)
         upper_triangle = corr_matrix.where(
@@ -621,37 +720,48 @@ class MacroFeatureValidator:
 
         logger.info(
             "  Total feature pairs: %d",
-            len(corr_matrix.columns) * (len(corr_matrix.columns) - 1) // 2
+            len(corr_matrix.columns) * (len(corr_matrix.columns) - 1) // 2,
         )
         logger.info("  Maximum correlation: %.3f", max_corr)
         logger.info("  Threshold: %.2f", threshold)
 
         if len(high_corr_pairs) > 0:
             # Sort by correlation (descending)
-            high_corr_pairs = sorted(high_corr_pairs,
-                                     key=lambda x: x['correlation'],
-                                     reverse=True)
+            high_corr_pairs = sorted(
+                high_corr_pairs, key=lambda x: x["correlation"], reverse=True
+            )
 
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d feature pairs with correlation >%.2f" % (len(high_corr_pairs), threshold),
-                severity='warning',
-                details={'high_corr_pairs': high_corr_pairs[:5]}
-            ))
-            logger.warning("[WARN] Found %d feature pairs with correlation >%.2f:", len(high_corr_pairs), threshold)
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d feature pairs with correlation >%.2f"
+                    % (len(high_corr_pairs), threshold),
+                    severity="warning",
+                    details={"high_corr_pairs": high_corr_pairs[:5]},
+                )
+            )
+            logger.warning(
+                "[WARN] Found %d feature pairs with correlation >%.2f:",
+                len(high_corr_pairs),
+                threshold,
+            )
             for pair in high_corr_pairs[:5]:
                 logger.warning(
                     "       %s <-> %s: %.3f",
-                    pair['feature_1'], pair['feature_2'], pair['correlation']
+                    pair["feature_1"],
+                    pair["feature_2"],
+                    pair["correlation"],
                 )
             if len(high_corr_pairs) > 5:
                 logger.warning("       ... and %d more pairs", len(high_corr_pairs) - 5)
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="No feature pairs with correlation >%.2f" % threshold,
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="No feature pairs with correlation >%.2f" % threshold,
+                    severity="info",
+                )
+            )
             logger.info("[PASS] All feature correlations <%.2f", threshold)
 
     def _check_stationarity(self) -> None:
@@ -675,16 +785,14 @@ class MacroFeatureValidator:
                     continue
 
                 # Run ADF test
-                adf_result = adfuller(series, autolag='AIC')
+                adf_result = adfuller(series, autolag="AIC")
                 p_value = adf_result[1]
 
                 if p_value >= alpha:
                     # Non-stationary (cannot reject null hypothesis)
-                    non_stationary.append({
-                        'feature': col,
-                        'p_value': p_value,
-                        'adf_stat': adf_result[0]
-                    })
+                    non_stationary.append(
+                        {"feature": col, "p_value": p_value, "adf_stat": adf_result[0]}
+                    )
                 else:
                     stationary_count += 1
 
@@ -701,31 +809,43 @@ class MacroFeatureValidator:
 
         if len(non_stationary) > 0:
             # Sort by p-value (most non-stationary first)
-            non_stationary = sorted(non_stationary,
-                                    key=lambda x: x['p_value'],
-                                    reverse=True)
+            non_stationary = sorted(
+                non_stationary, key=lambda x: x["p_value"], reverse=True
+            )
 
-            self.results.append(ValidationResult(
-                passed=False,
-                message="%d features are non-stationary (p >= %.2f)" % (len(non_stationary), alpha),
-                severity='warning',
-                details={'non_stationary': non_stationary[:5]}
-            ))
-            logger.warning("[WARN] %d non-stationary features (may have trends/unit roots):", len(non_stationary))
+            self.results.append(
+                ValidationResult(
+                    passed=False,
+                    message="%d features are non-stationary (p >= %.2f)"
+                    % (len(non_stationary), alpha),
+                    severity="warning",
+                    details={"non_stationary": non_stationary[:5]},
+                )
+            )
+            logger.warning(
+                "[WARN] %d non-stationary features (may have trends/unit roots):",
+                len(non_stationary),
+            )
             for item in non_stationary[:5]:
                 logger.warning(
                     "       %s: p=%.4f, ADF=%.3f",
-                    item['feature'], item['p_value'], item['adf_stat']
+                    item["feature"],
+                    item["p_value"],
+                    item["adf_stat"],
                 )
             if len(non_stationary) > 5:
                 logger.warning("       ... and %d more", len(non_stationary) - 5)
-            logger.info("       Note: Non-stationary features may need differencing or detrending")
+            logger.info(
+                "       Note: Non-stationary features may need differencing or detrending"
+            )
         else:
-            self.results.append(ValidationResult(
-                passed=True,
-                message="All features are stationary (p < %.2f)" % alpha,
-                severity='info'
-            ))
+            self.results.append(
+                ValidationResult(
+                    passed=True,
+                    message="All features are stationary (p < %.2f)" % alpha,
+                    severity="info",
+                )
+            )
             logger.info("[PASS] All %d features are stationary", total_tested)
 
     def _log_summary(self) -> None:
@@ -734,8 +854,8 @@ class MacroFeatureValidator:
         logger.info("VALIDATION SUMMARY")
         logger.info("=" * 80)
 
-        errors = [r for r in self.results if r.severity == 'error' and not r.passed]
-        warnings = [r for r in self.results if r.severity == 'warning' and not r.passed]
+        errors = [r for r in self.results if r.severity == "error" and not r.passed]
+        warnings = [r for r in self.results if r.severity == "warning" and not r.passed]
         passed = [r for r in self.results if r.passed]
 
         logger.info("[PASS] Passed: %d", len(passed))
@@ -758,8 +878,7 @@ class MacroFeatureValidator:
 
 
 def validate_macro_features(
-    feature_data: pd.DataFrame,
-    frequency_map: Optional[Dict[str, str]] = None
+    feature_data: pd.DataFrame, frequency_map: Optional[Dict[str, str]] = None
 ) -> List[ValidationResult]:
     """
     Convenience function to validate macro features.

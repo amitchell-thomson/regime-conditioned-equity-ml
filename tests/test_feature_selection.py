@@ -7,7 +7,9 @@ import pytest
 from regime_ml.features.macro.group_pca import GroupPCATransformer
 
 
-def _make_features(n_rows: int = 200, seed: int = 42) -> tuple[pd.DataFrame, dict[str, str]]:
+def _make_features(
+    n_rows: int = 200, seed: int = 42
+) -> tuple[pd.DataFrame, dict[str, str]]:
     """Build a small synthetic feature DataFrame with known group assignments."""
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2010-01-04", periods=n_rows)
@@ -90,17 +92,20 @@ def test_no_oos_data_used_in_fit():
     n_is = is_mask.sum()
 
     t10y = rng.standard_normal(len(dates))
-    dgs10_is = t10y[:n_is].copy()          # identical to T10Y3M in IS → perfect correlation
+    dgs10_is = t10y[:n_is].copy()  # identical to T10Y3M in IS → perfect correlation
     dgs10_oos = rng.standard_normal(len(dates) - n_is)  # random in OOS
 
-    features = pd.DataFrame({
-        "T10Y3M_level_zscore_252": t10y,
-        "DGS10_level_zscore_252": np.concatenate([dgs10_is, dgs10_oos]),
-        "VIXCLS_level_zscore_63": rng.standard_normal(len(dates)),
-        "CFNAI_level_zscore_36": rng.standard_normal(len(dates)),
-        "PCEPILFE_yoy_12_zscore_36": rng.standard_normal(len(dates)),
-        "NFCI_level_zscore_50": rng.standard_normal(len(dates)),
-    }, index=dates)
+    features = pd.DataFrame(
+        {
+            "T10Y3M_level_zscore_252": t10y,
+            "DGS10_level_zscore_252": np.concatenate([dgs10_is, dgs10_oos]),
+            "VIXCLS_level_zscore_63": rng.standard_normal(len(dates)),
+            "CFNAI_level_zscore_36": rng.standard_normal(len(dates)),
+            "PCEPILFE_yoy_12_zscore_36": rng.standard_normal(len(dates)),
+            "NFCI_level_zscore_50": rng.standard_normal(len(dates)),
+        },
+        index=dates,
+    )
     group_map = {
         "T10Y3M_level_zscore_252": "rates",
         "DGS10_level_zscore_252": "rates",
@@ -110,7 +115,10 @@ def test_no_oos_data_used_in_fit():
         "NFCI_level_zscore_50": "liquidity",
     }
 
-    t = GroupPCATransformer({"rates": 1, "stress": 1, "growth": 1, "inflation": 1, "liquidity": 1}, TRAIN_END)
+    t = GroupPCATransformer(
+        {"rates": 1, "stress": 1, "growth": 1, "inflation": 1, "liquidity": 1},
+        TRAIN_END,
+    )
     t.fit(features, group_map)
 
     # IS-only fit on perfectly correlated rates → PC1 explains ~100% of rates variance
@@ -124,12 +132,17 @@ def test_no_oos_data_used_in_fit():
 def test_ordered_columns_sorted_by_variance():
     """get_ordered_pc_columns() returns columns in descending explained-variance order."""
     features, group_map = _make_features()
-    t = GroupPCATransformer({"stress": 2, "rates": 2, "growth": 1, "inflation": 1, "liquidity": 1}, TRAIN_END)
+    t = GroupPCATransformer(
+        {"stress": 2, "rates": 2, "growth": 1, "inflation": 1, "liquidity": 1},
+        TRAIN_END,
+    )
     t.fit(features, group_map)
 
     ordered = t.get_ordered_pc_columns()
     variances = [
-        t._pcas[col.rsplit("_pc", 1)[0]].explained_variance_[int(col.rsplit("_pc", 1)[1]) - 1]
+        t._pcas[col.rsplit("_pc", 1)[0]].explained_variance_[
+            int(col.rsplit("_pc", 1)[1]) - 1
+        ]
         for col in ordered
     ]
     assert variances == sorted(variances, reverse=True)
@@ -147,7 +160,10 @@ def test_transform_columns_match_ordered_columns():
 def test_n_components_capped_at_n_features():
     """Requesting more PCs than features in a group is silently capped."""
     features, group_map = _make_features()
-    t = GroupPCATransformer({"stress": 10, "rates": 1, "growth": 1, "inflation": 1, "liquidity": 1}, TRAIN_END)
+    t = GroupPCATransformer(
+        {"stress": 10, "rates": 1, "growth": 1, "inflation": 1, "liquidity": 1},
+        TRAIN_END,
+    )
     result = t.fit_transform(features, group_map)
 
     stress_cols = [c for c in result.columns if c.startswith("stress_")]
@@ -179,7 +195,10 @@ def test_transform_before_fit_raises():
 def test_get_loadings_shape():
     """get_loadings() returns correct shape per group."""
     features, group_map = _make_features()
-    t = GroupPCATransformer({"stress": 2, "rates": 1, "growth": 1, "inflation": 1, "liquidity": 1}, TRAIN_END)
+    t = GroupPCATransformer(
+        {"stress": 2, "rates": 1, "growth": 1, "inflation": 1, "liquidity": 1},
+        TRAIN_END,
+    )
     t.fit(features, group_map)
 
     loadings = t.get_loadings()
@@ -200,5 +219,11 @@ def test_save_loadings(tmp_path):
     assert (tmp_path / "pca_explained_variance.csv").exists()
 
     summary = pd.read_csv(tmp_path / "pca_explained_variance.csv")
-    assert set(summary.columns) >= {"group", "pc", "column", "explained_variance", "explained_variance_ratio"}
+    assert set(summary.columns) >= {
+        "group",
+        "pc",
+        "column",
+        "explained_variance",
+        "explained_variance_ratio",
+    }
     assert len(summary) == sum(N_COMPONENTS.values())

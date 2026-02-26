@@ -18,12 +18,16 @@ from regime_ml.regimes.hmm import (
 def _make_df(n: int = 300, d: int = 3, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range("2005-01-01", periods=n)
-    return pd.DataFrame(rng.standard_normal((n, d)), index=idx, columns=[f"f{i}" for i in range(d)])
+    return pd.DataFrame(
+        rng.standard_normal((n, d)), index=idx, columns=[f"f{i}" for i in range(d)]
+    )
 
 
 def _fitted_detector(n: int = 300, d: int = 3, K: int = 3, cov: str = "diag"):
     df = _make_df(n=n, d=d)
-    means, covs, scaler = initialise_emissions(df, n_clusters=K, random_state=0, covariance_type=cov)
+    means, covs, scaler = initialise_emissions(
+        df, n_clusters=K, random_state=0, covariance_type=cov
+    )
     det = HMMRegimeDetector(
         n_regimes=K,
         covariance_type=cov,
@@ -52,7 +56,13 @@ class TestHMMSaveLoad:
         save_dir = tmp_path / "model"
         det.save(save_dir)
 
-        expected = {"metadata.json", "transmat.npy", "startprob.npy", "means.npy", "covars.npy"}
+        expected = {
+            "metadata.json",
+            "transmat.npy",
+            "startprob.npy",
+            "means.npy",
+            "covars.npy",
+        }
         actual = {f.name for f in save_dir.iterdir()}
         assert expected.issubset(actual), f"Missing files: {expected - actual}"
 
@@ -116,9 +126,10 @@ class TestHMMSaveLoad:
     def test_no_pickle_import_in_hmm_source(self):
         """Confirm 'import pickle' has been removed from hmm.py."""
         from pathlib import Path
+
         source = (
             Path(__file__).parent.parent / "src" / "regime_ml" / "regimes" / "hmm.py"
         ).read_text()
-        assert "import pickle" not in source, (
-            "hmm.py still contains 'import pickle' — pickle must be replaced with JSON/numpy"
-        )
+        assert (
+            "import pickle" not in source
+        ), "hmm.py still contains 'import pickle' — pickle must be replaced with JSON/numpy"

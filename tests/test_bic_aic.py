@@ -16,12 +16,16 @@ from regime_ml.regimes.hmm import (
 def _make_df(n: int = 300, d: int = 3, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     idx = pd.bdate_range("2005-01-01", periods=n)
-    return pd.DataFrame(rng.standard_normal((n, d)), index=idx, columns=[f"f{i}" for i in range(d)])
+    return pd.DataFrame(
+        rng.standard_normal((n, d)), index=idx, columns=[f"f{i}" for i in range(d)]
+    )
 
 
 def _fitted_detector(n: int = 300, d: int = 3, K: int = 3, cov: str = "diag") -> tuple:
     df = _make_df(n=n, d=d)
-    means, covs, scaler = initialise_emissions(df, n_clusters=K, random_state=0, covariance_type=cov)
+    means, covs, scaler = initialise_emissions(
+        df, n_clusters=K, random_state=0, covariance_type=cov
+    )
     det = HMMRegimeDetector(
         n_regimes=K,
         covariance_type=cov,
@@ -39,6 +43,7 @@ def _fitted_detector(n: int = 300, d: int = 3, K: int = 3, cov: str = "diag") ->
 # ---------------------------------------------------------------------------
 # _n_params tests
 # ---------------------------------------------------------------------------
+
 
 class TestNParams:
     def test_diag_formula(self):
@@ -79,6 +84,7 @@ class TestNParams:
 # bic / aic tests
 # ---------------------------------------------------------------------------
 
+
 class TestBicAic:
     def test_bic_is_finite(self):
         det, X = _fitted_detector()
@@ -92,9 +98,9 @@ class TestBicAic:
         """BIC penalises more than AIC when n > e^2 ≈ 7.4 (i.e. always in practice)."""
         det, X = _fitted_detector(n=300)
         # BIC penalty: p * log(n), AIC penalty: 2p  → BIC > AIC when log(n) > 2
-        assert det.bic(X) > det.aic(X), (
-            "BIC should exceed AIC for n=300 since log(300) > 2"
-        )
+        assert det.bic(X) > det.aic(
+            X
+        ), "BIC should exceed AIC for n=300 since log(300) > 2"
 
     def test_bic_penalises_complexity(self):
         """A more complex model (larger K) should have a higher BIC on random data
@@ -102,18 +108,28 @@ class TestBicAic:
         D = 3
         # Use a single large dataset so both models see the same X
         df = _make_df(n=500, d=D, seed=42)
-        means2, covs2, sc2 = initialise_emissions(df, n_clusters=2, random_state=0, covariance_type="diag")
-        means4, covs4, sc4 = initialise_emissions(df, n_clusters=4, random_state=0, covariance_type="diag")
+        means2, covs2, sc2 = initialise_emissions(
+            df, n_clusters=2, random_state=0, covariance_type="diag"
+        )
+        means4, covs4, sc4 = initialise_emissions(
+            df, n_clusters=4, random_state=0, covariance_type="diag"
+        )
 
         det2 = HMMRegimeDetector(
-            n_regimes=2, covariance_type="diag", random_state=0,
-            means=means2, covars=covs2,
+            n_regimes=2,
+            covariance_type="diag",
+            random_state=0,
+            means=means2,
+            covars=covs2,
             transmat=initialise_transitions(2, p_stay=0.9),
             startprob=initialise_probabilities(2),
         )
         det4 = HMMRegimeDetector(
-            n_regimes=4, covariance_type="diag", random_state=0,
-            means=means4, covars=covs4,
+            n_regimes=4,
+            covariance_type="diag",
+            random_state=0,
+            means=means4,
+            covars=covs4,
             transmat=initialise_transitions(4, p_stay=0.9),
             startprob=initialise_probabilities(4),
         )
@@ -125,9 +141,9 @@ class TestBicAic:
 
         # On pure noise, the 4-regime model should not be penalised to a lower BIC;
         # we only assert det4._n_params() > det2._n_params() as the penalty direction.
-        assert det4._n_params() > det2._n_params(), (
-            "K=4 model must have more free parameters than K=2 model."
-        )
+        assert (
+            det4._n_params() > det2._n_params()
+        ), "K=4 model must have more free parameters than K=2 model."
 
     def test_bic_raises_on_unfitted(self):
         det = HMMRegimeDetector(n_regimes=2)

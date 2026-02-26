@@ -83,7 +83,9 @@ def _build_signature_matrix(
     return A, archetype_keys, display_names
 
 
-def _cosine_similarity_matrix(state_vecs: np.ndarray, archetype_vecs: np.ndarray) -> np.ndarray:
+def _cosine_similarity_matrix(
+    state_vecs: np.ndarray, archetype_vecs: np.ndarray
+) -> np.ndarray:
     """Compute (n_states, n_archetypes) cosine similarity matrix.
 
     Both inputs are L2-normalised before computing the dot product so the
@@ -145,13 +147,17 @@ def label_regimes(
     T, d = X.shape
     T2, K = gamma.shape
     if T != T2:
-        raise ValueError(f"X ({T} rows) and proba ({T2} rows) must align on time dimension.")
+        raise ValueError(
+            f"X ({T} rows) and proba ({T2} rows) must align on time dimension."
+        )
     if len(feature_names) != d:
-        raise ValueError(f"feature_names length {len(feature_names)} must match X columns {d}.")
+        raise ValueError(
+            f"feature_names length {len(feature_names)} must match X columns {d}."
+        )
 
     # --- Weighted state means: mu_k (K, d)
     Nk = np.maximum(gamma.sum(axis=0), 1e-12)  # (K,)
-    mu_k = (gamma.T @ X) / Nk[:, None]         # (K, d)
+    mu_k = (gamma.T @ X) / Nk[:, None]  # (K, d)
 
     # --- Group-level scores per state: state_vecs (K, n_groups)
     group_to_idx: dict[str, list[int]] = {g: [] for g in _GROUPS}
@@ -173,17 +179,22 @@ def label_regimes(
     n_archetypes = len(archetype_keys)
     if n_archetypes >= K:
         row_ind, col_ind = linear_sum_assignment(-S)
-        assigned_archetype_idx = {int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))}
+        assigned_archetype_idx = {
+            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
+        }
     else:
         # More states than archetypes: assign greedily without repeat
         # (rare — archetype pool should always be > K)
         logger.warning(
             "label_regimes: more HMM states (%d) than archetypes (%d). "
             "Some states will be unclassified by design.",
-            K, n_archetypes,
+            K,
+            n_archetypes,
         )
         row_ind, col_ind = linear_sum_assignment(-S[:, :n_archetypes])
-        assigned_archetype_idx = {int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))}
+        assigned_archetype_idx = {
+            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
+        }
 
     # --- Build per-state label dicts
     results: list[dict[str, Any]] = []
@@ -192,10 +203,11 @@ def label_regimes(
         best_score = float(S[k, assigned_j]) if assigned_j is not None else -np.inf
 
         # Runner-up: best score among un-assigned archetypes
-        runner_up_j = int(np.argmax([
-            S[k, j] if j != assigned_j else -np.inf
-            for j in range(n_archetypes)
-        ]))
+        runner_up_j = int(
+            np.argmax(
+                [S[k, j] if j != assigned_j else -np.inf for j in range(n_archetypes)]
+            )
+        )
         runner_up_score = float(S[k, runner_up_j])
         margin = best_score - runner_up_score
 
@@ -210,25 +222,28 @@ def label_regimes(
             logger.info(
                 "label_regimes: state %d unclassified — best score=%.3f (threshold=%.2f), "
                 "best archetype=%s, runner_up=%s (score=%.3f)",
-                k, best_score, min_confidence,
+                k,
+                best_score,
+                min_confidence,
                 display_names[assigned_j] if assigned_j is not None else "none",
-                display_names[runner_up_j], runner_up_score,
+                display_names[runner_up_j],
+                runner_up_score,
             )
 
-        results.append({
-            "state_idx": k,
-            "label": label,
-            "status": status,
-            "confidence": round(best_score, 4),
-            "margin": round(margin, 4),
-            "archetype_key": archetype_key,
-            "runner_up": display_names[runner_up_j],
-            "runner_up_score": round(runner_up_score, 4),
-        })
+        results.append(
+            {
+                "state_idx": k,
+                "label": label,
+                "status": status,
+                "confidence": round(best_score, 4),
+                "margin": round(margin, 4),
+                "archetype_key": archetype_key,
+                "runner_up": display_names[runner_up_j],
+                "runner_up_score": round(runner_up_score, 4),
+            }
+        )
 
     # Log summary
     matched = sum(1 for r in results if r["status"] == "matched")
-    logger.info(
-        "label_regimes: %d/%d states matched to named archetypes.", matched, K
-    )
+    logger.info("label_regimes: %d/%d states matched to named archetypes.", matched, K)
     return results

@@ -34,24 +34,28 @@ def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None
     feature_metadata = []
     for col in features.columns:
         # Parse feature name
-        parts = col.split('_')
+        parts = col.split("_")
         indicator = parts[0]
-        transforms = '_'.join(parts[1:])
+        transforms = "_".join(parts[1:])
 
-        feature_metadata.append({
-            'name': col,
-            'indicator': indicator,
-            'transforms': transforms,
-            'frequency': frequency_map.get(indicator, 'unknown'),
-            'mean': float(features[col].mean()),
-            'std': float(features[col].std()),
-            'missing_pct': float(features[col].isna().sum() / len(features) * 100),
-            'n_outliers_5sigma': int((features[col].abs() > 5).sum())
-        })
+        feature_metadata.append(
+            {
+                "name": col,
+                "indicator": indicator,
+                "transforms": transforms,
+                "frequency": frequency_map.get(indicator, "unknown"),
+                "mean": float(features[col].mean()),
+                "std": float(features[col].std()),
+                "missing_pct": float(features[col].isna().sum() / len(features) * 100),
+                "n_outliers_5sigma": int((features[col].abs() > 5).sum()),
+            }
+        )
 
     # Save as YAML or JSON
-    with open('data/features/feature_metadata.yaml', 'w') as f:
-        yaml.dump({'features': feature_metadata, 'n_features': len(feature_metadata)}, f)
+    with open("data/features/feature_metadata.yaml", "w") as f:
+        yaml.dump(
+            {"features": feature_metadata, "n_features": len(feature_metadata)}, f
+        )
 
     logger.info("Created metadata for %d features", len(feature_metadata))
 
@@ -108,9 +112,11 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     # Extract frequency map from YAML configuration
     # Maps series_code -> frequency ('daily', 'weekly', 'monthly')
     frequency_map = {}
-    for ticker_name, ticker_config in regime_cfg.get('series', {}).items():
-        series_code = ticker_config.get('id')
-        frequency = ticker_config.get('frequency', 'daily')  # Default to daily if not specified
+    for ticker_name, ticker_config in regime_cfg.get("series", {}).items():
+        series_code = ticker_config.get("id")
+        frequency = ticker_config.get(
+            "frequency", "daily"
+        )  # Default to daily if not specified
         if series_code:
             frequency_map[series_code] = frequency
 
@@ -121,7 +127,9 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     # Process each macro indicator
     for series_code in processed_data["series_code"].unique():
         # Extract data for this indicator
-        ticker_df = processed_data[processed_data["series_code"] == series_code].set_index("date")
+        ticker_df = processed_data[
+            processed_data["series_code"] == series_code
+        ].set_index("date")
 
         # Staleness flags: True = actual data point, False = forward-filled
         is_new_data = pd.Series(ticker_df["is_new_data"])
@@ -142,10 +150,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
             # - Computes on actual data points only (where is_new_data=True)
             # - Forward-fills results to full daily index
             # - staleness_mode='strict' is the default
-            transformed_series = chain.transform(
-                series=series,
-                is_new_data=is_new_data
-            )
+            transformed_series = chain.transform(series=series, is_new_data=is_new_data)
 
             # Add feature to dataframe (auto-aligns by date index)
             feature_data[feature_name] = transformed_series
@@ -158,9 +163,12 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     validation_results = validate_macro_features(feature_data, frequency_map)
 
     # Check if validation passed
-    errors = [r for r in validation_results if r.severity == 'error' and not r.passed]
+    errors = [r for r in validation_results if r.severity == "error" and not r.passed]
     if errors:
-        logger.warning("Validation found %d errors. Review before using these features.", len(errors))
+        logger.warning(
+            "Validation found %d errors. Review before using these features.",
+            len(errors),
+        )
 
     # Save raw_features to parquet
     raw_output_path = regime_cfg["raw_features_path"]
