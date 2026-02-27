@@ -158,17 +158,16 @@ class TestBicAic:
             det.aic(X)
 
     def test_bic_increases_with_more_samples_given_same_model(self):
-        """BIC penalty grows with n: fitting on 2x data should give higher BIC
-        if model fit (log-likelihood per sample) stays similar."""
+        """BIC penalty grows with n: BIC = -2*total_LL + p*log(n).
+        hmmlearn's score() returns total log-likelihood (not per-sample).
+        Verify the formula is applied correctly against a manual calculation."""
         det_small, X_small = _fitted_detector(n=100)
         det_large, X_large = _fitted_detector(n=500)
-        # n_params is fixed; penalty = n_params * log(n) grows with n
-        K, D = 3, 3
         p = det_small._n_params()
-        ll_per_sample_small = det_small.score(X_small)
-        ll_per_sample_large = det_large.score(X_large)
-        bic_manual_small = -2 * ll_per_sample_small * 100 + p * np.log(100)
-        bic_manual_large = -2 * ll_per_sample_large * 500 + p * np.log(500)
-        # Just verify the formula is being applied correctly
+        # score() returns total log-likelihood — no multiplication by n
+        ll_small = det_small.score(X_small)
+        ll_large = det_large.score(X_large)
+        bic_manual_small = -2 * ll_small + p * np.log(100)
+        bic_manual_large = -2 * ll_large + p * np.log(500)
         np.testing.assert_allclose(det_small.bic(X_small), bic_manual_small, rtol=1e-6)
         np.testing.assert_allclose(det_large.bic(X_large), bic_manual_large, rtol=1e-6)

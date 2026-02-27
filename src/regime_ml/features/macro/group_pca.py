@@ -35,13 +35,26 @@ class GroupPCATransformer:
             configs/regimes/regime_config.yaml feature_selection.group_pca.n_components.
         train_end_date: IS boundary (inclusive). PCA is fit only on rows with
             index <= this date. Matches the convention in initialise_emissions().
+        sign_anchors: Optional dict mapping group name to anchor config, e.g.
+            {'liquidity': {'series': 'VIXCLS', 'good_direction': 'low'}}. For each
+            group, PC1 is sign-normalised so that positive values always indicate
+            economically *good* conditions. 'good_direction' is 'low' for indicators
+            where a lower value is better (VIX, UNRATE), and 'high' for indicators
+            where a higher value is better (CFNAI). The sign is determined from the
+            IS-fitted loading — no future data is used. The convention makes archetype
+            templates written in economic intuition space (positive = good) directly
+            comparable to state means.
     """
 
     def __init__(
-        self, n_components_per_group: dict[str, int], train_end_date: str
+        self,
+        n_components_per_group: dict[str, int],
+        train_end_date: str,
+        sign_anchors: dict[str, dict] | None = None,
     ) -> None:
         self.n_components_per_group = n_components_per_group
         self.train_end_date = pd.Timestamp(train_end_date)
+        self._sign_anchors: dict[str, dict] = sign_anchors or {}
         self._pcas: dict[str, PCA] = {}
         self._group_features: dict[str, list[str]] = {}
 
@@ -93,6 +106,54 @@ class GroupPCATransformer:
             X_is = features.loc[is_mask, feats].values
             pca = PCA(n_components=n_components)
             pca.fit(X_is)
+
+            # Sign-normalise PC1 so positive = economically good conditions.
+            # The anchor feature's IS loading on PC1 determines the flip: if the
+            # anchor is a "bad" indicator (good_direction='low') and PC1 loads
+            # positively on it, high PC1 = bad → flip. Vice-versa for 'high'.
+            # Only PC1 is flipped; higher PCs capture orthogonal residual variance
+            # that does not have a clean economic interpretation axis.
+            anchor_cfg = self._sign_anchors.get(group)
+            if anchor_cfg is not None:
+                anchor_series = anchor_cfg["series"]
+                good_direction = anchor_cfg.get("good_direction", "high")
+                # Find the first feature whose name starts with the anchor series code
+                anchor_idx = next(
+                    (i for i, f in enumerate(feats) if f.startswith(anchor_series)),
+                    None,
+                )
+                if anchor_idx is not None:
+                    loading = float(pca.components_[0, anchor_idx])
+                    should_flip = (
+                        (good_direction == "low" and loading > 0)
+                        or (good_direction == "high" and loading < 0)
+                    )
+                    if should_flip:
+                        pca.components_[0] *= -1
+                        logger.info(
+                            "Group '%s': flipped PC1 sign (anchor=%s, loading_before_flip=%.3f,"
+                            " good_direction=%s)",
+                            group,
+                            anchor_series,
+                            loading,
+                            good_direction,
+                        )
+                    else:
+                        logger.info(
+                            "Group '%s': PC1 sign already correct (anchor=%s, loading=%.3f,"
+                            " good_direction=%s)",
+                            group,
+                            anchor_series,
+                            loading,
+                            good_direction,
+                        )
+                else:
+                    logger.warning(
+                        "Group '%s': anchor series '%s' not found in features %s — skipping sign fix",
+                        group,
+                        anchor_series,
+                        feats,
+                    )
 
             self._pcas[group] = pca
             self._group_features[group] = feats

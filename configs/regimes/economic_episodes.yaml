@@ -6,37 +6,63 @@
 #
 # ANALYSIS ONLY — this file is never read in the fitting path or trading logic.
 # expected_archetype must match a key in regime_archetypes.yaml.
+#
+# Active archetype keys in the current 4-state model:
+#   expansion           — broad-based expansion
+#   policy_constrained  — Fed tightening cycle, inverted curve, elevated inflation
+#   slowdown            — late-cycle disinflation: falling inflation + stagnant growth + intact labour
+#   liquidity_crisis    — extreme financial stress: employment collapse + emergency cuts
 
 episodes:
   - name: "Dot-com Bust"
     start: "2000-03-01"
     end: "2002-10-31"
-    expected_archetype: "recession"
+    expected_archetype: "recession"         # tech crash + mild recession
 
   - name: "Post Dot-com Recovery"
     start: "2003-07-01"
     end: "2004-12-31"
-    expected_archetype: "recovery"
+    expected_archetype: "expansion"         # closest active state (no recovery state)
 
   - name: "GFC 2008-09"
     start: "2007-10-01"
     end: "2009-06-30"
-    expected_archetype: "recession"
+    expected_archetype: "liquidity_crisis"  # financial crisis, not a regular recession
 
   - name: "Post-GFC Recovery"
     start: "2009-07-01"
     end: "2011-12-31"
-    expected_archetype: "recovery"
+    expected_archetype: "expansion"         # closest active state (no recovery state)
 
   - name: "2013 Taper Tantrum"
     start: "2013-05-01"
     end: "2013-12-31"
-    expected_archetype: "policy_constrained"
+    expected_archetype: "expansion"      # No actual rate hikes; equities rallied; risk-on
 
-  - name: "Mid-cycle Expansion 2014-19"
+  - name: "2014-2015 Bull Market Peak"
     start: "2014-01-01"
-    end: "2019-01-01"
-    expected_archetype: "expansion"
+    end: "2014-12-31"
+    expected_archetype: "expansion"      # Strong labour + moderate growth before commodity bust
+
+  - name: "2015-2016 China & Commodity Slowdown"
+    start: "2015-01-01"
+    end: "2016-12-31"
+    expected_archetype: "slowdown"       # Disinflation, near-zero growth, oil collapse, VIX spikes
+
+  - name: "2017 Expansion"
+    start: "2017-01-01"
+    end: "2017-12-31"
+    expected_archetype: "expansion"      # Global synchronised growth, low VIX, earnings acceleration
+
+  - name: "2018 Late-Cycle Tightening"
+    start: "2018-01-01"
+    end: "2018-12-31"
+    expected_archetype: "policy_constrained"  # Fed hiking, curve flattening, trade war
+
+  - name: "2019 Late-Cycle Slowdown"
+    start: "2019-01-01"
+    end: "2020-02-14"
+    expected_archetype: "slowdown"       # Yield curve inverted, trade war fears, global slowdown; inflation tame
 
   - name: "COVID Crash"
     start: "2020-02-15"
@@ -51,4 +77,19 @@ episodes:
   - name: "Inflation Regime 2022"
     start: "2021-12-01"
     end: "2023-06-30"
-    expected_archetype: "stagflation"
+    expected_archetype: "policy_constrained"  # Fed hiking aggressively; curve inverted
+
+  - name: "2023 Disinflation Slowdown"
+    start: "2023-07-01"
+    end: "2024-03-31"
+    expected_archetype: "slowdown"       # Rapid disinflation, growth fears, labour still intact
+
+  - name: "2024 Soft Landing"
+    start: "2024-04-01"
+    end: "2024-12-31"
+    expected_archetype: "expansion"      # Fed pivot expected, labour robust, equity rally
+
+  - name: "2025 Policy Uncertainty"
+    start: "2025-01-01"
+    end: "2025-06-30"
+    expected_archetype: "slowdown"       # Tariff uncertainty, growth fears; but inflation not surging

@@ -3,8 +3,22 @@
 # Each archetype defines a signature vector over the 5 macro groups:
 #   rates, inflation, growth, liquidity, employment
 #
-# Signatures are expressed as approximate Z-score deviations from the
-# cross-state mean. Positive = elevated, negative = depressed.
+# Sign convention (consistent with PCA sign anchoring in group_pca.py):
+#   POSITIVE = economically GOOD / elevated in the beneficial direction.
+#   e.g. liquidity: +1.0  → ample liquidity (low VIX, tight spreads)
+#        employment: +0.8 → tight labour market (low unemployment)
+#        growth: +1.5     → above-trend activity
+# This matches the anchored PCA convention where positive PC1 = good conditions.
+#
+# rates_pc1 ORIENTATION (derived from PCA loadings on IS data):
+#   PC1 is dominated by T10Y2Y (+0.504) and T10Y3M (+0.494) minus FEDFUNDS (-0.451).
+#   POSITIVE rates_pc1 = steep yield curve + low short rates (easing cycle / post-crisis)
+#   NEGATIVE rates_pc1 = inverted yield curve + high short rates (tightening cycle / pre-recession)
+#   This is empirically confirmed:
+#     2007-09 GFC (Fed cut 5.25%→0%, curve steepened): rates_pc1 = +3.8
+#     2022 hiking cycle (curve inverted -0.6%): rates_pc1 = -2.8
+#     2013 taper tantrum (10Y spiked, curve steepened): rates_pc1 = +2.5
+#
 # The labeling algorithm uses cosine similarity to match detected HMM states
 # to archetypes via linear assignment (no archetype assigned to two states).
 #
@@ -12,60 +26,75 @@
 # Tune here — never in source code.
 
 label_config:
-  min_confidence: 0.35   # min cosine similarity for a named label
-  min_margin: 0.08       # min (best_score - runner_up_score) to confirm assignment
+  min_confidence: 0.18   # min cosine similarity for a named label
+  min_margin: 0.06       # min (best_score - runner_up_score) to confirm assignment
 
 archetypes:
   expansion:
     display_name: "Risk On - Expansion"
     signatures:
-      growth: 1.5
-      employment: 0.8
-      liquidity: 1.0
-      inflation: -0.3
-      rates: -0.4
+      growth: 1.5       # strong activity
+      employment: 0.8   # tight labour market
+      liquidity: 1.0    # ample financial liquidity
+      inflation: -0.3   # subdued inflation
+      rates: 0.4        # accommodative/normal curve (FEDFUNDS low, curve not inverted)
 
   stagflation:
     display_name: "Risk On - Stagflation"
     signatures:
-      inflation: 1.5
-      growth: -0.9
-      rates: 0.5
-      liquidity: -0.5
-      employment: -0.3
+      inflation: 1.5    # elevated inflation
+      growth: -0.9      # sluggish growth
+      rates: -0.8       # inverted yield curve (Fed hiking aggressively to fight inflation)
+      liquidity: -0.5   # tighter financial conditions
+      employment: 0.3   # labour still holding up
 
   policy_constrained:
     display_name: "Policy-Constrained Growth"
     signatures:
-      rates: 1.4
-      inflation: 1.0
-      growth: 0.3
-      liquidity: -0.6
-      employment: -0.1
+      rates: -1.2       # very inverted yield curve (aggressive tightening cycle)
+      inflation: 1.0    # above-target inflation driving tightening
+      growth: 0.3       # modest positive growth (economy still expanding)
+      liquidity: 0.3    # financial conditions elevated but not crisis (2022-24 had VIX <25)
+      employment: 0.4   # labour market still firm despite tightening
 
   recession:
     display_name: "Risk Off - Recession"
     signatures:
-      growth: -1.8
-      employment: -0.8
-      liquidity: -1.2
-      inflation: 0.1
-      rates: -0.3
+      growth: -1.8      # sharp contraction
+      employment: -0.4  # labour market softening (unemployment rising but not spiking)
+      liquidity: -1.2   # risk-off, elevated VIX and spreads
+      inflation: 0.1    # roughly neutral inflation
+      rates: -0.4       # flat/slightly inverted — rate cycle has not yet fully eased
 
   recovery:
     display_name: "Recovery"
     signatures:
-      growth: 0.9
-      employment: 0.4
-      liquidity: 0.6
-      inflation: -0.2
-      rates: -0.6
+      growth: 0.9       # recovering activity
+      employment: 0.4   # labour market healing
+      liquidity: 0.6    # risk appetite returning
+      inflation: -0.2   # inflation still subdued
+      rates: 0.7        # steep yield curve (Fed still at low/zero, curve normalized)
 
   liquidity_crisis:
     display_name: "Liquidity Crisis"
     signatures:
-      liquidity: -1.8
-      growth: -0.7
-      employment: -0.4
-      inflation: -0.3
-      rates: -0.2
+      liquidity: -2.5   # extreme stress — VIX >40, credit spreads blown out (GFC: -3.4, COVID: -2)
+      employment: -1.0  # significant job losses (GFC: -5.8, COVID: -1.9)
+      growth: -0.7      # growth impaired
+      inflation: -0.3   # deflationary pressure
+      rates: 1.5        # very steep curve — emergency cuts (Fed to 0%) steepen the curve sharply
+
+  slowdown:
+    display_name: "Late-Cycle Slowdown"
+    # Disinflation + stagnant growth + labour still intact + mildly inverted curve.
+    # Fits periods where the prior tightening cycle killed inflation but growth is
+    # stalling without a full recession: commodity bust 2015-16, trade-war 2019,
+    # rapid disinflation 2023.
+    # Empirical state means that inspired this archetype (4-regime IS fit):
+    #   rates=-0.67  inflation=-0.94  growth=+0.04  liquidity=-0.51  employment=+0.25
+    signatures:
+      inflation: -1.0   # strong disinflation — the dominant signal
+      rates: -0.7       # inverted curve (residual from prior tightening cycle)
+      growth: 0.1       # near-zero but not contracting
+      liquidity: -0.5   # moderate financial stress (VIX mildly elevated, some spread widening)
+      employment: 0.2   # labour market still firm — unemployment not spiking

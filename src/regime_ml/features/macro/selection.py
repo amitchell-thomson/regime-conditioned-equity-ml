@@ -107,9 +107,16 @@ def select_features(
         {g: n for g, n in n_components.items()},
     )
 
+    sign_anchors: dict[str, dict] | None = (
+        regime_cfg.get("feature_selection", {})
+        .get("group_pca", {})
+        .get("sign_anchors")
+    )
+
     transformer = GroupPCATransformer(
         n_components_per_group=n_components,
         train_end_date=train_end_date,
+        sign_anchors=sign_anchors,
     )
     pc_features = transformer.fit_transform(features, group_map)
 

@@ -58,7 +58,8 @@ def select_best_hmm_model(
     max_share: float = 0.80,
     oos_min_share: float = 0.02,
     oos_max_share: float = 0.85,
-    max_implied_duration: float = 3000.0,
+    max_implied_duration: float = 400.0,
+    min_exit_paths_required: int = 2,
     maha_min_quantile: float = 0.10,
     top_n: int = 10,
     weights: Dict[str, float] | None = None,
@@ -71,12 +72,15 @@ def select_best_hmm_model(
       rejected_df (model_id + rejection reason)
     """
     # --- Scoring weights (override via weights kwarg or use defaults)
+    # macro/oos now use absolute _soft_score (not percentile rank), so they are
+    # no longer biased toward fewer-regime models. BIC raised to 0.15 to give
+    # complexity penalty stronger influence when n_regimes differs.
     _default_weights = {
         "macro": 0.25,
-        "transitions": 0.25,
-        "stability": 0.20,
-        "oos": 0.20,
-        "bic": 0.10,
+        "transitions": 0.20,
+        "stability": 0.25,
+        "oos": 0.15,
+        "bic": 0.15,
     }
     w = {**_default_weights, **(weights or {})}
     # Normalise in case caller passed unnormalised weights
@@ -102,6 +106,9 @@ def select_best_hmm_model(
                 "max_offdiag": _get(
                     r, "transition_matrix_sanity.max_offdiag_transition"
                 ),
+                "min_exit_paths": _get(
+                    r, "transition_matrix_sanity.min_exit_paths"
+                ),
                 "min_share": _get(r, "regime_stability.min_regime_share"),
                 "max_share": _get(r, "regime_stability.max_regime_share"),
                 "n_transitions": _get(r, "regime_stability.n_transitions"),
@@ -110,8 +117,9 @@ def select_best_hmm_model(
                 "maha_median": _get(r, "macro_coherence.maha_median"),
                 "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
                 "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
-                # --- BIC / AIC (complexity penalties)
-                "bic_full": _get(r, "bic_full"),
+                # --- BIC / AIC (complexity penalties) — IS only: penalty must be
+                # based on the same data the model was fitted on.
+                "bic_is": _get(r, "bic_is"),
                 # --- OOS slice (structural robustness)
                 "oos_min_share": _get(
                     r, "out_of_sample.regime_stability.min_regime_share"
@@ -159,12 +167,20 @@ def select_best_hmm_model(
     # A regime with >80% share dominates the sample, implying near-trivial segmentation.
     reject(df["min_share"] < min_share, f"dead regime (min_share < {min_share})")
     reject(df["max_share"] > max_share, f"collapsed regime (max_share > {max_share})")
-    # Implied duration >3000 days (~12 years) means the self-transition probability is
-    # nearly 1 — the model cannot escape the regime; it is effectively absorbing.
+    # Implied duration above threshold: states that are too sticky cannot respond to
+    # genuine regime changes and indicate EM converged to an over-penalised solution.
     reject(
         df["max_implied_duration"] > max_implied_duration,
         f"absorbing regime (max_implied_duration > {max_implied_duration})",
     )
+    # Structurally isolated states: fewer than min_exit_paths reachable exit states
+    # means a state can only leave via one path. This forces cascade transitions and
+    # produces short whipsaw episodes when the model routes through intermediate states.
+    if df["min_exit_paths"].notna().any():
+        reject(
+            df["min_exit_paths"] < min_exit_paths_required,
+            f"isolated state (min_exit_paths < {min_exit_paths_required})",
+        )
     # Mahalanobis distance below the 10th percentile means at least two regimes are
     # indistinguishable in macro feature space — a degenerate, redundant solution.
     reject(
@@ -197,6 +213,15 @@ def select_best_hmm_model(
         "duration": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 0.75},
         "turnover": {"optimal": 0.15, "lo": 0.05, "hi": 0.30, "slack": 1.0},
         "persistence": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 1.0},
+        # Absolute macro coherence thresholds. Using absolute scores instead of
+        # percentile ranks removes the inherent bias toward fewer-regime models:
+        # 3-regime models always have higher Mahalanobis distances (fewer clusters
+        # share the same feature space), causing percentile ranking to unfairly
+        # inflate their macro_score over valid 4/5-regime models. Both 3- and 4-
+        # regime models with maha_median ~2.0 and anova_r2 ~0.33 are equally good;
+        # BIC should be the primary discriminator when n_regimes differs.
+        "maha": {"optimal": 2.0, "lo": 1.0, "hi": 4.0, "slack": 0.5},
+        "anova": {"optimal": 0.35, "lo": 0.10, "hi": 0.60, "slack": 0.5},
     }
     _cfg_ss: Dict[str, Any] = soft_score_cfg or {}
     ss: Dict[str, Any] = {
@@ -204,14 +229,25 @@ def select_best_hmm_model(
     }
 
     # --- Scoring
-    # Percentile rank: maps a Series to [0,1] where higher rank = better model
+    # Percentile rank: maps a Series to [0,1] where higher rank = better model.
+    # Only used for metrics that are directly comparable across models with the
+    # same n_regimes (transitions, stability). NOT used for macro coherence metrics
+    # (Mahalanobis, ANOVA R²) — those use absolute _soft_score thresholds instead.
     def rrank(s: pd.Series, ascending: bool = False) -> pd.Series:
         return s.rank(pct=True, ascending=ascending)
 
-    # Macro coherence: higher Mahalanobis separation and R² are better
-    macro = 0.5 * rrank(survivors["maha_median"], ascending=True) + 0.5 * rrank(
-        survivors["anova_r2_mean"], ascending=True
+    # Macro coherence: absolute _soft_score against thresholds from config.
+    # This avoids the cross-n_regimes bias in percentile ranking: 3-regime models
+    # always have larger Mahalanobis distances (fewer clusters per feature space)
+    # and would rank 1st even when a 4-regime model is equally good in absolute
+    # terms. BIC (not rank) should be the primary n_regimes discriminator.
+    maha_score = survivors["maha_median"].apply(
+        lambda x: _soft_score(x, **ss["maha"])
     )
+    anova_score = survivors["anova_r2_mean"].apply(
+        lambda x: _soft_score(x, **ss["anova"])
+    )
+    macro = 0.5 * maha_score + 0.5 * anova_score
 
     # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
     # _soft_score replaces the flat-top _range_score so within-range models are ranked
@@ -236,15 +272,19 @@ def select_best_hmm_model(
     ent = rrank(survivors["entropy_mean"], ascending=True)
     stab = 0.45 * churn + 0.35 * pers + 0.20 * ent
 
-    # OOS robustness: macro coherence must not collapse out-of-sample
+    # OOS robustness: absolute _soft_score using same anova thresholds as IS.
+    # Percentile ranking here would also be biased toward 3-regime models (which
+    # tend to have higher OOS ANOVA R² as a structural artefact of fewer clusters).
     oos_macro: pd.Series | float = (
-        rrank(survivors["oos_anova_r2_mean"], ascending=True)
+        survivors["oos_anova_r2_mean"].apply(
+            lambda x: _soft_score(x, **ss["anova"])
+        )
         if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
-        else 0.0
+        else pd.Series(0.0, index=survivors.index)
     )
 
     # BIC: lower is better — normalise within survivors, invert so higher = better
-    bic_vals = survivors["bic_full"]
+    bic_vals = survivors["bic_is"]
     if bic_vals.notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow type
         bic_min, bic_max = float(bic_vals.min()), float(bic_vals.max())
         bic_score: pd.Series | float = (

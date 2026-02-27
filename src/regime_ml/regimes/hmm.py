@@ -12,6 +12,7 @@ from sklearn.covariance import LedoitWolf
 from sklearn.preprocessing import StandardScaler
 
 from .base import BaseRegimeDetector
+from .evaluation import evaluate_transmat_sanity
 
 logger = logging.getLogger(__name__)
 
@@ -673,7 +674,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         n = len(X)
-        log_lik = self.score(X) * n  # score() returns per-sample log-likelihood
+        log_lik = self.score(X)  # score() returns total log-likelihood
         return float(-2.0 * log_lik + self._n_params() * np.log(n))
 
     def aic(self, X: np.ndarray) -> float:
@@ -688,8 +689,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         """
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
-        n = len(X)
-        log_lik = self.score(X) * n
+        log_lik = self.score(X)  # score() returns total log-likelihood
         return float(-2.0 * log_lik + 2.0 * self._n_params())
 
     def get_transition_matrix(self) -> np.ndarray:
@@ -931,6 +931,14 @@ def fit_best_of_n_seeds(
             _, counts = np.unique(labels, return_counts=True)
             shares = counts / len(labels)
             passed = bool(np.min(shares) >= min_regime_share)
+            # Also require a valid stationary distribution (non-absorbing transmat).
+            # Without this check, degenerate solutions (one or more states with zero
+            # off-diagonal transitions) can win on log-likelihood over valid solutions,
+            # causing select_best_hmm_model to reject the entire grid candidate after
+            # the fact. Filtering here gives n_init chances to find a valid solution.
+            if passed:
+                sanity = evaluate_transmat_sanity(detector.model.transmat_, n_mix=1)
+                passed = passed and bool(sanity["tv_distance_valid"])
 
             logger.info(
                 "fit_best_of_n_seeds: seed=%d  ll=%.4f  passed=%s  min_share=%.3f",

@@ -150,6 +150,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     outputs_cfg: dict = regime_cfg.get("outputs", {})
     sel_weights: dict | None = regime_cfg.get("selection", {}).get("weights")
     soft_score_cfg: dict | None = regime_cfg.get("selection", {}).get("soft_score")
+    sel_filters: dict = regime_cfg.get("selection", {}).get("filters", {})
 
     # --- 1. Load features
     features_path = _resolve(
@@ -198,8 +199,22 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     results = compare_hmm_models(features_df, models)
 
     # --- 5. Select best model
+    # Build filter kwargs from YAML — only pass keys that select_best_hmm_model accepts
+    _filter_kwarg_map = {
+        "max_implied_duration": "max_implied_duration",
+        "min_exit_paths": "min_exit_paths_required",
+    }
+    filter_kwargs = {
+        kwarg: sel_filters[key]
+        for key, kwarg in _filter_kwarg_map.items()
+        if key in sel_filters
+    }
+
     best_model_id, leaderboard_df, rejected_df = select_best_hmm_model(
-        results, weights=sel_weights, soft_score_cfg=soft_score_cfg
+        results,
+        weights=sel_weights,
+        soft_score_cfg=soft_score_cfg,
+        **filter_kwargs,
     )
     best_row = leaderboard_df.iloc[0]
     best_model_data = models[best_model_id]
@@ -252,10 +267,11 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         episode_df = validate_against_episodes(
             regime_series, label_results, episodes_path
         )
-        n_matched_episodes = (
-            int(episode_df["archetype_match"].sum()) if not episode_df.empty else 0
-        )
-        n_episodes = len(episode_df)
+        # Exclude episodes with no data overlap (e.g. pre-dataset history).
+        # Counting them as failures inflates the miss rate against an unreachable target.
+        reachable = episode_df[episode_df["n_days"] > 0] if not episode_df.empty else episode_df
+        n_matched_episodes = int(reachable["archetype_match"].sum()) if not reachable.empty else 0
+        n_episodes = len(reachable)
         logger.info(
             "run_regime_pipeline: episode validation — %d/%d matched.",
             n_matched_episodes,
@@ -292,9 +308,9 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         "n_regimes": int(best_model_data["n_regimes"]),
         "covariance_type": str(best_model_data["covariance_type"]),
         "p_stay": float(best_model_data["p_stay"]),
-        "bic_full": (
-            float(best_row.get("bic_full", np.nan))
-            if np.isfinite(float(best_row.get("bic_full", np.nan) or float("nan")))
+        "bic_is": (
+            float(best_row.get("bic_is", np.nan))
+            if np.isfinite(float(best_row.get("bic_is", np.nan) or float("nan")))
             else None
         ),
         "final_score": float(best_row.get("final_score", np.nan)),
@@ -341,6 +357,13 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         outputs_cfg.get("run_metadata", "data/regimes/run_metadata.json")
     )
 
+    # Persist the best model parameters so Phase 3 can load without re-fitting.
+    best_model_path = _resolve(
+        outputs_cfg.get("best_model", "data/regimes/best_model")
+    )
+    best_detector.save(best_model_path)
+    logger.info("run_regime_pipeline: saved best model → %s", best_model_path)
+
     regime_assignments_df.to_parquet(assignments_path)
     logger.info("run_regime_pipeline: saved regime assignments → %s", assignments_path)
 
@@ -361,7 +384,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     return {
         "best_model_id": best_model_id,
         "n_regimes": int(best_model_data["n_regimes"]),
-        "bic_full": run_metadata["bic_full"],
+        "bic_is": run_metadata["bic_is"],
         "final_score": run_metadata["final_score"],
         "n_matched_episodes": n_matched_episodes,
         "output_paths": {

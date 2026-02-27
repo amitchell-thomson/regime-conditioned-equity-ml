@@ -170,7 +170,11 @@ def label_regimes(
     for gi, g in enumerate(_GROUPS):
         idxs = group_to_idx[g]
         if idxs:
-            state_vecs[:, gi] = mu_k[:, idxs].mean(axis=1)
+            # Use PC1 only (idxs[0]) rather than averaging all PCs.
+            # Averaging PC1 and PC2 dilutes the group signal because PC2 often
+            # captures a different economic dimension (e.g. rates slope vs level)
+            # that partially cancels with PC1 when compared to archetype signatures.
+            state_vecs[:, gi] = mu_k[:, idxs[0]]
 
     # --- Cosine similarity: S[k, j] = similarity of state k to archetype j
     S = _cosine_similarity_matrix(state_vecs, A)  # (K, n_archetypes)

@@ -136,6 +136,13 @@ def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
     off = A.copy()
     np.fill_diagonal(off, 0.0)
 
+    # Count reachable exit states per row (off-diagonal entries > threshold).
+    # A state with only 1 exit path forces cascade transitions — when that single
+    # exit state is unavailable, the model whipsaws through intermediate states.
+    _exit_threshold = 0.001
+    exit_counts = np.sum(off > _exit_threshold, axis=1)
+    min_exit_paths = int(np.min(exit_counts))
+
     return {
         "median_implied_duration": float(np.median(durations)),
         "max_implied_duration": float(np.max(durations)),
@@ -144,6 +151,7 @@ def evaluate_transmat_sanity(A: np.ndarray, n_mix: int = 20) -> Dict[str, Any]:
         "mean_row_entropy": float(np.mean(row_entropy)),
         "tv_distance_valid": bool(stationary_valid),
         "tv_distance": tv_mean,  # horizon controlled by n_mix parameter
+        "min_exit_paths": min_exit_paths,  # minimum reachable exit states from any state
     }
 
 
@@ -432,9 +440,12 @@ def compare_hmm_models(
         trans_sanity = evaluate_transmat_sanity(
             model.get_transition_matrix(), n_mix=n_mix
         )
+        # filt_full (not smooth_full) — smooth_proba runs forward-backward on the
+        # complete IS+OOS sequence; each IS step sees future OOS observations.
+        # filter_proba is causal: uses only t=0..s at each step s.
         macro_coh_full = evaluate_macro_coherence(
             X_full_scaled,
-            smooth_full,
+            filt_full,
             feature_names=selected_features,
             featuregroup_map=featuregroup_map,
         )

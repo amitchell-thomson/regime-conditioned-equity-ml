@@ -47,7 +47,12 @@ def test_deterministic_for_fixed_n_init():
 
 
 def test_best_of_n_ll_is_optimal():
-    """The returned model's LL must be >= all individual seed LLs."""
+    """The returned model must have the highest LL among seeds that pass the
+    transmat validity filter. Seeds with absorbing states (tv_distance_valid=False)
+    are correctly skipped even when they attain higher LL — the non-stationary
+    transition matrix makes their labels economically meaningless."""
+    from regime_ml.regimes.evaluation import evaluate_transmat_sanity
+
     df = _make_df(n=400, seed=7)
     n_seeds = 5
     detector, scaler = fit_best_of_n_seeds(
@@ -56,7 +61,8 @@ def test_best_of_n_ll_is_optimal():
     X_scaled = scaler.transform(df.values)
     best_ll = detector.score(X_scaled)
 
-    # Re-run all seeds individually and confirm best_ll >= each.
+    # Re-run all seeds individually. Only compare against seeds that also have a
+    # valid stationary distribution — those are the ones fit_best_of_n_seeds considers.
     for seed in range(n_seeds):
         means, covs, sc = initialise_emissions(df, n_clusters=2, random_state=seed)
         det = HMMRegimeDetector(
@@ -69,9 +75,13 @@ def test_best_of_n_ll_is_optimal():
         )
         det.fit(sc.transform(df.values))
         seed_ll = det.score(sc.transform(df.values))
+        sanity = evaluate_transmat_sanity(det.model.transmat_, n_mix=1)
+        if not sanity["tv_distance_valid"]:
+            # Correctly excluded: absorbing state; LL comparison not meaningful.
+            continue
         assert (
             best_ll >= seed_ll - 1e-6
-        ), f"Returned LL {best_ll:.4f} is below seed {seed} LL {seed_ll:.4f}."
+        ), f"Returned LL {best_ll:.4f} is below valid-transmat seed {seed} LL {seed_ll:.4f}."
 
 
 def test_degeneracy_filter_fallback_warning(caplog):
