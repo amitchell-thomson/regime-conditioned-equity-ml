@@ -1,130 +1,253 @@
+"""Dynamic regime labeling via archetype pool matching.
+
+Algorithm:
+  1. Load archetype pool from configs/regimes/regime_archetypes.yaml.
+  2. Compute per-state weighted group Z-scores from the feature matrix.
+  3. Build a cosine-similarity score matrix (n_states x n_archetypes).
+  4. Solve the linear assignment problem so no archetype is used twice.
+  5. Apply confidence + margin thresholds — states that fall short are
+     labelled "Unclassified Regime {k}" with the top-2 candidates noted.
+
+ANALYSIS ONLY: pass smooth_proba() output for cleanest group separation.
+Never use labels derived here in trading signals.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
 import numpy as np
-import pandas as pd
-from typing import Dict, Any
+import yaml
+from scipy.optimize import linear_sum_assignment
+
 from regime_ml.data.macro import build_featuregroup_map
-# uses your build_featuregroup_map(all_feature_names)
+
+logger = logging.getLogger(__name__)
+
+_GROUPS = ("rates", "inflation", "real_economy", "credit", "volatility")
+_DEFAULT_ARCHETYPES_PATH = (
+    Path(__file__).parent.parent.parent.parent
+    / "configs/regimes/regime_archetypes.yaml"
+)
+
+
+def _load_archetypes(path: Path | None = None) -> tuple[dict, float, float]:
+    """Load archetype signatures and labelling thresholds from YAML.
+
+    Returns:
+        archetypes: {key: {"display_name": str, "signatures": {group: float}}}
+        min_confidence: minimum cosine similarity for a named label
+        min_margin: minimum (best - runner_up) score gap to confirm assignment
+    """
+    cfg_path = Path(path) if path is not None else _DEFAULT_ARCHETYPES_PATH
+    if not cfg_path.exists():
+        raise FileNotFoundError(
+            f"regime_archetypes.yaml not found at {cfg_path}. "
+            "Create it or pass an explicit archetypes_path."
+        )
+    with open(cfg_path, "r") as fh:
+        raw = yaml.safe_load(fh)
+
+    label_cfg = raw.get("label_config", {})
+    min_confidence = float(label_cfg.get("min_confidence", 0.45))
+    min_margin = float(label_cfg.get("min_margin", 0.08))
+    archetypes = raw.get("archetypes", {})
+
+    if not archetypes:
+        raise ValueError("regime_archetypes.yaml contains no archetypes.")
+
+    return archetypes, min_confidence, min_margin
+
+
+def _build_signature_matrix(
+    archetypes: dict, groups: tuple[str, ...]
+) -> tuple[np.ndarray, list[str], list[str]]:
+    """Build the (n_archetypes, n_groups) signature matrix.
+
+    Returns:
+        A:               (n_archetypes, n_groups) array of signature values
+        archetype_keys:  list of archetype keys in row order
+        display_names:   list of display_names in the same order
+    """
+    archetype_keys = list(archetypes.keys())
+    display_names = [archetypes[k]["display_name"] for k in archetype_keys]
+    A = np.array(
+        [
+            [float(archetypes[k]["signatures"].get(g, 0.0)) for g in groups]
+            for k in archetype_keys
+        ],
+        dtype=float,
+    )
+    return A, archetype_keys, display_names
+
+
+def _cosine_similarity_matrix(
+    state_vecs: np.ndarray, archetype_vecs: np.ndarray
+) -> np.ndarray:
+    """Compute (n_states, n_archetypes) cosine similarity matrix.
+
+    Both inputs are L2-normalised before computing the dot product so the
+    result is bounded in [-1, 1].
+    """
+    eps = 1e-12
+    sv = state_vecs / (np.linalg.norm(state_vecs, axis=1, keepdims=True) + eps)
+    av = archetype_vecs / (np.linalg.norm(archetype_vecs, axis=1, keepdims=True) + eps)
+    return sv @ av.T  # (n_states, n_archetypes)
+
 
 def label_regimes(
     X: np.ndarray,
     proba: np.ndarray,
     feature_names: list[str],
-) -> Dict[str, Any]:
-    """
-    Label HMM regimes (state indices) using macro group signatures.
+    archetypes_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Label HMM states by matching them to economic regime archetypes.
 
     Args:
-        X: (T, d) feature matrix (ideally standardized)
-        proba: (T, K) regime probabilities (smoothed preferred for interpretation)
-        feature_names: list of length d, names corresponding to columns in X
-        featuregroup_map: {feature_name: group_name} e.g. output of build_featuregroup_map(feature_names)
-        label_set: which deterministic label schema to use
+        X:               (T, d) feature matrix (standardised).
+        proba:           (T, K) regime probability matrix. Pass smooth_proba()
+                         for best group separation — analysis only.
+        feature_names:   Length-d list of feature column names.
+        archetypes_path: Optional override for configs/regimes/regime_archetypes.yaml.
 
     Returns:
-        Dict containing:
-          - state_labels: {k: "Label"}
-          - state_group_scores: {k: {group: score}}
-          - state_feature_means: (K,d) list form for JSON friendliness
-          - group_ordering: helpful ranks used in labeling
+        List of K dicts, one per state, with keys:
+          state_idx       int   — HMM state index (0-based)
+          label           str   — display name or "Unclassified Regime {k}"
+          status          str   — "matched" | "unclassified"
+          confidence      float — cosine similarity of best archetype match
+          margin          float — confidence minus runner_up score
+          archetype_key   str | None
+          runner_up       str   — display name of second-best archetype
+          runner_up_score float
+
+    Notes:
+        ANALYSIS ONLY. Never use the returned labels to generate trading signals.
+        For live regime assignment use model.filter_proba() (causal).
     """
+    archetypes, min_confidence, min_margin = _load_archetypes(archetypes_path)
+    A, archetype_keys, display_names = _build_signature_matrix(archetypes, _GROUPS)
+
     featuregroup_map = build_featuregroup_map(feature_names)
+
+    # Fallback for PCA-style columns (e.g. "growth_pc1", "rates_pc2") whose
+    # prefix is a group name rather than a FRED series code, so they map to
+    # "unknown" via build_featuregroup_map.
+    _groups_set = set(_GROUPS)
+    for feat in feature_names:
+        if featuregroup_map.get(feat, "unknown") == "unknown":
+            prefix = feat.split("_")[0]
+            if prefix in _groups_set:
+                featuregroup_map[feat] = prefix
 
     X = np.asarray(X, float)
     gamma = np.asarray(proba, float)
-
     T, d = X.shape
     T2, K = gamma.shape
-    assert T == T2, "X and proba must align on time dimension"
-    assert len(feature_names) == d, "feature_names must match X columns"
+    if T != T2:
+        raise ValueError(
+            f"X ({T} rows) and proba ({T2} rows) must align on time dimension."
+        )
+    if len(feature_names) != d:
+        raise ValueError(
+            f"feature_names length {len(feature_names)} must match X columns {d}."
+        )
 
-    # --- Weighted regime means in feature space: mu_k (K,d)
-    Nk = np.maximum(gamma.sum(axis=0), 1e-12)              # (K,)
-    mu_k = (gamma.T @ X) / Nk[:, None]                     # (K,d)
+    # --- Weighted state means: mu_k (K, d)
+    Nk = np.maximum(gamma.sum(axis=0), 1e-12)  # (K,)
+    mu_k = (gamma.T @ X) / Nk[:, None]  # (K, d)
 
-    # --- Group aggregation: state_group_scores[k][group] = mean of mu_k over features in that group
-    groups = sorted(set(featuregroup_map.get(f, "unknown") for f in feature_names))
-    # build indices per group
-    group_to_idx: Dict[str, list[int]] = {g: [] for g in groups}
-    for j, f in enumerate(feature_names):
-        g = featuregroup_map.get(f, "unknown")
-        group_to_idx.setdefault(g, []).append(j)
+    # --- Group-level scores per state: state_vecs (K, n_groups)
+    group_to_idx: dict[str, list[int]] = {g: [] for g in _GROUPS}
+    for j, fname in enumerate(feature_names):
+        g = featuregroup_map.get(fname, "unknown")
+        if g in group_to_idx:
+            group_to_idx[g].append(j)
 
-    state_group_scores: Dict[int, Dict[str, float]] = {}
+    state_vecs = np.zeros((K, len(_GROUPS)), dtype=float)
+    for gi, g in enumerate(_GROUPS):
+        idxs = group_to_idx[g]
+        if idxs:
+            # Use PC1 only (idxs[0]) rather than averaging all PCs.
+            # Averaging PC1 and PC2 dilutes the group signal because PC2 often
+            # captures a different economic dimension (e.g. rates slope vs level)
+            # that partially cancels with PC1 when compared to archetype signatures.
+            state_vecs[:, gi] = mu_k[:, idxs[0]]
+
+    # --- Cosine similarity: S[k, j] = similarity of state k to archetype j
+    S = _cosine_similarity_matrix(state_vecs, A)  # (K, n_archetypes)
+
+    # --- Linear assignment: maximise total similarity (no archetype used twice)
+    n_archetypes = len(archetype_keys)
+    if n_archetypes >= K:
+        row_ind, col_ind = linear_sum_assignment(-S)
+        assigned_archetype_idx = {
+            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
+        }
+    else:
+        # More states than archetypes: assign greedily without repeat
+        # (rare — archetype pool should always be > K)
+        logger.warning(
+            "label_regimes: more HMM states (%d) than archetypes (%d). "
+            "Some states will be unclassified by design.",
+            K,
+            n_archetypes,
+        )
+        row_ind, col_ind = linear_sum_assignment(-S[:, :n_archetypes])
+        assigned_archetype_idx = {
+            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
+        }
+
+    # --- Build per-state label dicts
+    results: list[dict[str, Any]] = []
     for k in range(K):
-        state_group_scores[k] = {}
-        for g, idxs in group_to_idx.items():
-            if len(idxs) == 0:
-                continue
-            state_group_scores[k][g] = float(np.mean(mu_k[k, idxs]))
+        assigned_j = assigned_archetype_idx.get(k)
+        best_score = float(S[k, assigned_j]) if assigned_j is not None else -np.inf
 
-    # Convenience arrays for ranking (missing groups -> 0.0)
-    def gvec(gname: str) -> np.ndarray:
-        return np.array([state_group_scores[k].get(gname, 0.0) for k in range(K)], dtype=float)
+        # Runner-up: best score among un-assigned archetypes
+        runner_up_j = int(
+            np.argmax(
+                [S[k, j] if j != assigned_j else -np.inf for j in range(n_archetypes)]
+            )
+        )
+        runner_up_score = float(S[k, runner_up_j])
+        margin = best_score - runner_up_score
 
-    growth = gvec("growth")
-    inflation = gvec("inflation")
-    rates = gvec("rates")
-    liquidity = gvec("liquidity")
-    stress = gvec("stress")  # might be "risk" or "volatility" in your config; see note below
+        if assigned_j is not None and best_score >= min_confidence:
+            label = display_names[assigned_j]
+            status = "matched"
+            archetype_key: str | None = archetype_keys[assigned_j]
+        else:
+            label = f"Unclassified Regime {k}"
+            status = "unclassified"
+            archetype_key = None
+            logger.info(
+                "label_regimes: state %d unclassified — best score=%.3f (threshold=%.2f), "
+                "best archetype=%s, runner_up=%s (score=%.3f)",
+                k,
+                best_score,
+                min_confidence,
+                display_names[assigned_j] if assigned_j is not None else "none",
+                display_names[runner_up_j],
+                runner_up_score,
+            )
 
-    def zscore(v: np.ndarray, eps: float = 1e-12) -> np.ndarray:
-        v = np.asarray(v, float)
-        s = v.std()
-        if s < eps:
-            return np.zeros_like(v)
-        return (v - v.mean()) / s
+        results.append(
+            {
+                "state_idx": k,
+                "label": label,
+                "status": status,
+                "confidence": round(best_score, 4),
+                "margin": round(margin, 4),
+                "archetype_key": archetype_key,
+                "runner_up": display_names[runner_up_j],
+                "runner_up_score": round(runner_up_score, 4),
+            }
+        )
 
-    zg = zscore(growth)
-    zi = zscore(inflation)
-    zr = zscore(rates)
-    zl = zscore(liquidity)
-    zs = zscore(stress)
-
-    labels = [
-        ("Risk On - Expansion               ",                    +1.3*zg + 1.1*zl - 1.4*zi - 1.0*zs - 0.3*zr),
-        ("Risk On - Stagflation",                                 -1.1*zg + 1.5*zi + 0.6*zs + 0.3*zr),
-        ("Risk On - Policy-Contstrained Expansion",               +1.2*zi + 1.3*zr - 0.9*zl - 0.4*zg),
-        ("Risk Off - Recession",                                  -1.4*zg - 0.6*zl + 1.4*zs + 0.3*zi),
-    ]
-
-    # pick best label per regime
-    state_labels = {}
-    state_label_scores = {}
-    for k in range(K):
-        best_lab, best_score = None, -np.inf
-        for lab, score_vec in labels:
-            sc = float(score_vec[k])
-            if sc > best_score:
-                best_lab, best_score = lab, sc
-        state_labels[k] = best_lab
-        state_label_scores[k] = best_score
-        
-
-    # If multiple states got same label, keep them but you may want to disambiguate
-    # deterministically by appending suffixes.
-    counts = {}
-    for k, lab in state_labels.items():
-        counts[lab] = counts.get(lab, 0) + 1
-    if any(v > 1 for v in counts.values()):
-        seen = {}
-        for k in sorted(state_labels):
-            lab = state_labels[k]
-            seen[lab] = seen.get(lab, 0) + 1
-            if counts[lab] > 1:
-                state_labels[k] = f"{lab} ({seen[lab]})"
-
-
-
-
-    return {
-        "state_labels": {int(k): v for k, v in state_labels.items()},
-        "state_group_scores": {int(k): {g: float(v) for g, v in dct.items()} for k, dct in state_group_scores.items()},
-        "state_feature_means": mu_k.tolist(),  # JSON friendly
-        "group_ordering": {
-            "growth_z_score": zg.tolist(),
-            "inflation_z_score": zi.tolist(),
-            "rates_z_score": zr.tolist(),
-            "liquidity_z_score": zl.tolist(),
-            "stress_z_score": zs.tolist(),
-        },
-        "groups_present": groups,
-    }
+    # Log summary
+    matched = sum(1 for r in results if r["status"] == "matched")
+    logger.info("label_regimes: %d/%d states matched to named archetypes.", matched, K)
+    return results

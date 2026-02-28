@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional
 import pandas as pd
-import numpy as np
+
 
 class BaseTransform(ABC):
     """
     Base class for all feature transforms.
-    
+
     Design principles:
     1. Transforms operate on Series, not DataFrames (single column in, single column out)
     2. Support for staleness-aware computation
@@ -17,7 +17,7 @@ class BaseTransform(ABC):
     def __init__(self, **params):
         """
         Initialize transform with parameters.
-        
+
         Common parameters:
             window: int - lookback window for rolling operations
             min_periods: int - minimum observations required
@@ -44,26 +44,26 @@ class BaseTransform(ABC):
         self,
         series: pd.Series,
         is_new_data: Optional[pd.Series] = None,
-        staleness_mode: str = "strict"
+        staleness_mode: str = "strict",
     ) -> pd.Series:
         """
         Apply transform to a series.
-        
+
         Args:
             series: Input series with DatetimeIndex
             is_new_data: Boolean series indicating actual vs forward-filled data
-            staleness_mode: 
+            staleness_mode:
                 - 'strict': Compute only on actual data points, then forward-fill
                 - 'ignore': Ignore staleness and compute on all data (could be computing of forward-filled data)
                 - 'weighted': Weight by data freshness
-        
+
         Returns:
             Transformed series with same index as input
         """
         if staleness_mode == "strict" and is_new_data is not None:
             # compute on actual data points
-            actual_data = series[is_new_data == True]
-            result = self._compute(actual_data) # type: ignore
+            actual_data = series[is_new_data.astype(bool)]
+            result = self._compute(actual_data)  # type: ignore[assignment]  # abstract _compute declared as pd.Series; subclass return type not narrowed by mypy
 
             # forward-fill to original index
             result = result.reindex(series.index).ffill()
@@ -73,8 +73,11 @@ class BaseTransform(ABC):
             result = self._compute(series)
 
         elif staleness_mode == "weighted":
-            print("Have not implemented weighted staleness mode yet")
-            result = self._compute(series)
+            raise NotImplementedError(
+                "staleness_mode='weighted' is not implemented. "
+                "Use 'strict' (compute on real data only, then forward-fill) "
+                "or 'ignore' (compute on all data including forward-fills)."
+            )
 
         else:
             raise ValueError(f"Invalid staleness mode: {staleness_mode}")
@@ -97,7 +100,7 @@ class BaseTransform(ABC):
 class ChainedTransform(BaseTransform):
     """
     Chain multiple transforms together.
-    
+
     Example:
         transform = Diff(periods=21).chain(ZScore(window=252))
         # Equivalent to: z_score(diff(x, 21), 252)
@@ -110,18 +113,22 @@ class ChainedTransform(BaseTransform):
     def _validate_params(self) -> None:
         if not self.transforms:
             raise ValueError("ChainedTransform must have at least one transform")
-    
+
     def _compute(self, series: pd.Series) -> pd.Series:
-        result = series
-        for transform in self.transforms:
-            result = transform._compute(result)
-        return result
-    
+        # Disabled: calling _compute() directly on a ChainedTransform bypasses the
+        # staleness handling in each constituent transform's .transform() method.
+        # Use ChainedTransform.transform(series, is_new_data, staleness_mode) instead.
+        raise NotImplementedError(
+            "ChainedTransform._compute() is disabled. "
+            "Use .transform(series, is_new_data, staleness_mode) to preserve "
+            "staleness-aware computation in each constituent transform."
+        )
+
     def transform(
         self,
         series: pd.Series,
         is_new_data: Optional[pd.Series] = None,
-        staleness_mode: str = "strict"
+        staleness_mode: str = "strict",
     ) -> pd.Series:
         """Apply transforms sequentially."""
         result = series

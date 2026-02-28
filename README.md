@@ -100,7 +100,7 @@ vix:
 
 **Feature Selection:**
 
-For regime detection, the pipeline selects the **top n (currently 5) most important features** from the validated set based on regime discriminative power:
+For regime detection, the pipeline selects the **top n most important features** from the validated set based on regime discriminative power:
 1. **T10Y3M_level** - Yield curve slope (recession signal)
 2. **VIXCLS_level** - Equity volatility (risk-on/risk-off)
 3. **NFCI_level** - Financial conditions (credit stress)
@@ -217,7 +217,9 @@ Unsupervised regime inference using Hidden Markov Models with Gaussian emissions
 regime-conditioned-equity-ml/
 │
 ├── configs/
-│   └── README.md
+│   └── data/
+│   └── models/
+│   └── regimes/
 │
 ├── data/
 │   └── raw/
@@ -236,3 +238,6 @@ regime-conditioned-equity-ml/
 ├── pyproject.toml
 └── README.md
 ```
+
+## Code Line Count
+ `cloc . --exclude-list-file=.clocignore`

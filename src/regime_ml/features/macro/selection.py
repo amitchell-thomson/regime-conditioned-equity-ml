@@ -1,74 +1,137 @@
-# src/regime_ml/features/selection.py
+"""
+Macro feature selection via within-group PCA.
 
+Replaces the previous hardcoded ranked feature list with a data-driven approach:
+PCA is applied independently within each macro group (rates, inflation, growth,
+employment, liquidity, stress) using IS data only. The resulting PC columns are
+the selected features for the HMM.
+
+All selection parameters (PC counts per group, IS boundary) are configured in
+configs/regimes/regime_config.yaml — no values are hardcoded here.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import numpy as np
 import pandas as pd
-from typing import List, Optional
-from regime_ml.data.common.loaders import load_dataframe
 
-def get_feature_groups() -> dict:
-    """Return features grouped by category."""
-    return {
-        'stress': ['VIXCLS_level_zscore_63', 'VIXCLS_diff_5_zscore_126', 
-                   'NFCI_level_zscore_50', 'NFCI_diff_21_zscore_50'],
-        'rates': ['DGS2_level_zscore_252', 'DGS10_level_zscore_252', 
-                  'T10Y3M_level_zscore_252', 'T10Y3M_diff_21_zscore_252'],
-        'inflation': ['PCEPILFE_yoy_12_zscore_36', 'PCEPILFE_yoy_12_diff_1_zscore_36'],
-        'growth': ['CFNAI_level_zscore_36', 'INDPRO_yoy_12_zscore_36'],
-        'labor': ['ICSA_movingaverage_4_zscore_50', 'ICSA_ma_4_pctchange_13_zscore_50']
-    }
+from regime_ml.features.macro.group_pca import GroupPCATransformer
 
-def get_top_features(n: int = 5) -> list[str]:
-    """
-    Return the top N most important features for regime detection.
-    
-    Features are ranked by regime discriminative power based on:
-    - Economic theory (recession signals, stress indicators)
-    - Empirical importance in regime literature
-    - Balance of levels (states) vs momentum (transitions)
-    
+logger = logging.getLogger(__name__)
+
+
+def _check_cross_group_correlation(
+    pc_features: pd.DataFrame,
+    train_end_date: str,
+    warn_threshold: float,
+) -> None:
+    """Warn if any cross-group PC pair exceeds the correlation threshold on IS data.
+
+    PCA makes within-group features orthogonal by construction, but two PCs from
+    different macro groups can still be highly correlated. High cross-group correlation
+    signals redundancy between groups that may reduce regime discriminability.
+
+    This check is non-blocking (warning only) — correlated PCs may have distinct
+    economic interpretations even when statistically correlated.
+
     Args:
-        n: Number of top features to return (default: 5)
-        
-    Returns:
-        List of feature names, ordered by importance
+        pc_features:    Full PC DataFrame (IS + OOS). Correlation is computed on IS only.
+        train_end_date: IS/OOS boundary string. Rows with index <= this date are used.
+        warn_threshold: Warn if any absolute Pearson correlation exceeds this value.
     """
-    
-    # Ranked features with concise explanations
-    ranked_features = [
-        # Tier 1: Core regime indicators (THE big 5)
-        'T10Y3M_level_zscore_252',                  # 1. Curve slope - recession predictor, inversion signals downturn
-        'VIXCLS_level_zscore_63',                   # 2. Equity vol - risk-on vs risk-off, fear gauge
-        'NFCI_level_zscore_50',                     # 3. Financial stress - credit conditions, systemic risk
-        'PCEPILFE_yoy_12_zscore_36',                # 4. Inflation - policy regime (dovish/hawkish), stagflation risk
-        'CFNAI_level_zscore_36',                    # 5. Activity - expansion vs contraction, business cycle
-        
-        # Tier 2: Critical momentum & secondary levels (useful for 6-10 feature models)
-        'DGS10_level_zscore_252',                   # 6. Long rates - QE/QT regime, growth expectations
-        'VIXCLS_diff_5_zscore_126',                 # 7. Vol momentum - stress building/easing rapidly
-        'T10Y3M_diff_21_zscore_252',                # 8. Curve steepening - reflation vs flattening trades
-        'CFNAI_diff_1_zscore_36',                   # 9. Growth momentum - acceleration/deceleration
-        'NFCI_diff_21_zscore_50',                   # 10. Credit tightening - financial conditions changing
-        
-        # Tier 3: Useful complementary features (for 11-15 feature models)
-        'PCEPILFE_yoy_12_diff_1_zscore_36',         # 11. Inflation accel - disinflation vs reacceleration
-        'DGS10_diff_21_zscore_252',                 # 12. Rate momentum - Fed tightening/easing pace
-        'ICSA_movingaverage_4_pctchange_13_zscore_50',  # 13. Labor deterioration - unemployment rising (3mo)
-        'INDPRO_yoy_12_zscore_36',                  # 14. Production - manufacturing cycle, goods vs services
-        'DGS2_level_zscore_252',                    # 15. Short rates - immediate policy stance
-        
-        # Tier 4: Additional depth (for 16-20 feature models)
-        'T10Y3M_diff_5_zscore_126',                 # 16. Curve momentum - quick flattening signals
-        'VIXCLS_movingaverage_21_diff_21_zscore_252',  # 17. Vol trend - sustained stress vs spikes
-        'INDPRO_yoy_12_diff_1_zscore_36',           # 18. Production accel - capex cycle turning points
-        'DGS10_diff_1_rollingstd_21_zscore_126',    # 19. Rate volatility - policy uncertainty
-        'ICSA_movingaverage_4_zscore_50',           # 20. Claims level - labor market tightness
-        
-        # Tier 5: Marginal value (for 21-25 feature models, consider dropping)
-        'NFCI_diff_5_diff_5_zscore_25',             # 21. Credit accel - second derivative, noisy
-        'VIXCLS_pctchange_1_rollingstd_21_zscore_126',  # 22. Vol-of-vol - extreme stress indicator
-        'ICSA_movingaverage_4_pctchange_4_zscore_25',  # 23. Labor momentum - 1mo change, noisier
-        'PCEPILFE_pctchange_1_zscore_36',           # 24. Monthly inflation - too noisy for regimes
-        'INDPRO_pctchange_3_zscore_36',             # 25. 3mo production - overlaps with YoY and CFNAI
+    is_mask = pc_features.index <= pd.Timestamp(train_end_date)
+    is_data = pc_features.loc[is_mask]
+
+    if is_data.shape[0] < 2 or is_data.shape[1] < 2:
+        return
+
+    corr = is_data.corr().abs()
+    np.fill_diagonal(corr.values, 0.0)
+
+    cols = list(corr.columns)
+    pairs = [
+        (c1, c2, float(corr.loc[c1, c2]))
+        for i, c1 in enumerate(cols)
+        for c2 in cols[i + 1 :]
+        if corr.loc[c1, c2] > warn_threshold
     ]
-    
-    # Return top N features
-    return ranked_features[:n]
+    if pairs:
+        logger.warning(
+            "Cross-group PC correlation exceeds %.2f for %d pair(s): %s. "
+            "Consider reviewing group definitions or increasing n_components.",
+            warn_threshold,
+            len(pairs),
+            [(c1, c2, f"{r:.3f}") for c1, c2, r in pairs],
+        )
+
+
+def select_features(
+    features: pd.DataFrame,
+    group_map: dict[str, str],
+    cfg: dict,
+) -> tuple[pd.DataFrame, GroupPCATransformer]:
+    """
+    Apply within-group PCA on IS data and return PC features for all dates.
+
+    Reads configuration from cfg['regimes']:
+        train_end_date                              — IS/OOS boundary (inclusive)
+        feature_selection.group_pca.n_components    — {group: n_pcs} dict
+
+    Args:
+        features:  Full (IS + OOS) raw feature DataFrame with burn-in rows already
+                   dropped (no NaNs). Produced by feature_data.dropna() in the pipeline.
+        group_map: {feature_name: group} mapping, e.g. {'VIXCLS_level_zscore_63': 'stress'}.
+                   Built by build_featuregroup_map().
+        cfg:       Full config dict from load_configs().
+
+    Returns:
+        pc_features:  DataFrame indexed identically to `features`, columns like
+                      rates_pc1, rates_pc2, stress_pc1, growth_pc1, ...
+        transformer:  Fitted GroupPCATransformer. Use:
+                          transformer.get_ordered_pc_columns()[:N]
+                      to get the N most explanatory PCs for HMM candidate count N.
+                          transformer.save_loadings(directory)
+                      to persist loading matrices and explained variance.
+    """
+    regime_cfg = cfg.get("regimes", {})
+    train_end_date: str = regime_cfg["train_end_date"]
+    n_components: dict[str, int] = regime_cfg["feature_selection"]["group_pca"][
+        "n_components"
+    ]
+
+    logger.info(
+        "Feature selection: within-group PCA | IS boundary: %s | groups: %s",
+        train_end_date,
+        {g: n for g, n in n_components.items()},
+    )
+
+    sign_anchors: dict[str, dict] | None = (
+        regime_cfg.get("feature_selection", {})
+        .get("group_pca", {})
+        .get("sign_anchors")
+    )
+
+    transformer = GroupPCATransformer(
+        n_components_per_group=n_components,
+        train_end_date=train_end_date,
+        sign_anchors=sign_anchors,
+    )
+    pc_features = transformer.fit_transform(features, group_map)
+
+    n_pcs = len(pc_features.columns)
+    logger.info(
+        "Selected %d PC features: %s",
+        n_pcs,
+        list(pc_features.columns),
+    )
+
+    # Check for high cross-group PC correlation (non-blocking warning).
+    corr_cfg = regime_cfg.get("feature_selection", {}).get(
+        "cross_group_correlation", {}
+    )
+    warn_threshold = float(corr_cfg.get("warn_threshold", 0.80))
+    _check_cross_group_correlation(pc_features, train_end_date, warn_threshold)
+
+    return pc_features, transformer

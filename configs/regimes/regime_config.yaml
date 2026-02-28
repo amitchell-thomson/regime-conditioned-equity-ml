@@ -1,0 +1,145 @@
+# IS/OOS split: 2019-01-01 keeps COVID (2020) in OOS alongside 2022 inflation
+# and 2023+ slowdown, so all four regime types are represented out-of-sample.
+# This lets the oos_min_share filter work correctly for rare states (liquidity_crisis)
+# that have no representation when the OOS period is the benign 2021-2026 window.
+train_end_date: "2019-01-01"
+
+# Multi-seed HMM initialization.
+# fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
+# model that passes the degeneracy filter. All values must come from this config.
+hmm:
+  n_init: 15              # Number of seeds to try (range(0, n_init))
+  min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
+
+# Grid search over HMM hyperparameters evaluated by compare_hmm_models().
+# covariance_types: "full" only — cross-group PCA correlations (e.g. employment-growth
+# r=-0.64) require full covariance to be modelled; "diag" misspecifies the joint
+# distribution and produces poorly separated regimes.
+# n_regimes: [3, 4, 5] — 5-regime models previously failed because KMeans
+# initialisation converges to the same degenerate EM solution (all seeds → identical
+# LL), producing an absorbing state. This is now fixed: fit_best_of_n_seeds() checks
+# tv_distance_valid per seed and skips degenerate candidates, allowing a valid 5-state
+# solution to be selected if one exists. 3 regimes is a stability baseline; 4 is the
+# primary target; 5 may better separate Liquidity Crisis from Policy Tightening.
+# p_stay: [0.93, 0.95, 0.97, 0.99] — extended range to let BIC compare stickiness.
+hmm_grid:
+  n_regimes: [3, 4, 5]
+  covariance_types: ["full"]
+  p_stay: [0.93, 0.95, 0.97, 0.99]
+
+# Soft scoring weights and soft-score parameters for select_best_hmm_model().
+# Must sum to 1.0. Adjust here — never in source code.
+# macro/oos now use absolute _soft_score (not percentile rank) so they are no
+# longer biased toward fewer-regime models. bic raised to 0.15 so BIC is the
+# primary discriminator when n_regimes differs (3-regime BIC vs 4-regime BIC
+# differences of >1000 should dominate model selection).
+# _soft_score() assigns 1.0 at 'optimal', 0.5 at 'lo'/'hi', decays to 0.0
+# at lo - slack*(hi-lo) and hi + slack*(hi-lo). Never hardcode these in source code.
+selection:
+  weights:
+    macro: 0.20
+    transitions: 0.20
+    stability: 0.20
+    oos: 0.15
+    bic: 0.10
+    churn: 0.15
+  # Hard-filter thresholds — models failing these are always rejected regardless of score.
+  # max_implied_duration: reject if any state's implied duration exceeds this many days.
+  #   With p_stay <= 0.97, well-behaved models rarely exceed 200 days; 400 still catches
+  #   genuinely absorbing states while allowing some EM drift beyond initialised p_stay.
+  # min_exit_paths: reject if any state can transition to fewer than this many other states
+  #   with probability > 0.001. States with only 1 exit path force cascade transitions
+  #   and produce short whipsaw episodes when the model must route through intermediate states.
+  filters:
+    max_implied_duration: 1500.0  # hard ceiling only for near-absorbing states; soft score penalises >150d
+    min_exit_paths: 1            # reject truly absorbing states (0 exits); 1-exit cascades penalised in transition score
+  soft_score:
+    duration:
+      optimal: 65.0   # Preferred median implied duration (days, ~4-5 months)
+      lo: 20.0        # Lower acceptable bound
+      hi: 150.0       # Upper acceptable bound
+      slack: 0.5      # Decay rate beyond bounds (fraction of hi-lo)
+    turnover:
+      optimal: 0.15   # Preferred 20-day total-variation distance
+      lo: 0.05
+      hi: 0.30
+      slack: 1.0
+    persistence:
+      optimal: 90.0   # Preferred average regime persistence (days)
+      lo: 20.0
+      hi: 200.0
+      slack: 1.0
+    # Absolute macro coherence thresholds. Used instead of percentile ranking so
+    # models with different n_regimes are scored on an equal footing. A 3-regime
+    # model and a 4-regime model with similar absolute maha/anova should receive
+    # similar macro scores; BIC then decides between them.
+    maha:
+      optimal: 2.0    # Preferred Mahalanobis separation between regimes
+      lo: 1.0         # Minimum acceptable (below = redundant/indistinct regimes)
+      hi: 4.0         # Upper bound (rare; score still high above this)
+      slack: 0.5
+    anova:
+      optimal: 0.35   # Preferred ANOVA R² (fraction of variance explained by regime)
+      lo: 0.10        # Poor macro coherence below this
+      hi: 0.60        # Very high coherence (possible overfitting risk)
+      slack: 0.5
+
+# Expanding-window cross-validation stability diagnostic.
+# Disabled by default (expensive — each fold refits all grid candidates).
+# Enable for final model validation runs only.
+cross_validation:
+  enabled: true
+  min_train_years: 5
+  fold_step_months: 12
+  oos_window_months: 12
+  max_churn_warning: 0.20   # flag if >20% of Viterbi dates change label across folds
+
+# Output file paths (relative to project root).
+outputs:
+  features_path: "data/features/macro_features_ready.parquet"
+  regime_assignments: "data/regimes/regime_assignments.parquet"
+  model_leaderboard: "data/regimes/model_leaderboard.csv"
+  label_results: "data/regimes/label_results.json"
+  run_metadata: "data/regimes/run_metadata.json"
+  best_model: "data/regimes/best_model"
+
+feature_selection:
+  group_pca:
+    # Number of principal components to retain per macro group.
+    # Increase for richer groups with more indicators; decrease for simpler groups.
+    # To vary candidate feature counts for HMM selection, use GroupPCATransformer.get_ordered_pc_columns()[:N].
+    n_components:
+      rates: 1
+      inflation: 1
+      real_economy: 1
+      credit: 1
+      volatility: 1
+    # PC1 sign anchoring: ensures positive PC1 always means economically GOOD conditions
+    # for each group. The sign is determined from IS-fitted loadings only (no look-ahead).
+    # good_direction: 'low'  → lower anchor values are better (VIX, UNRATE)
+    #                 'high' → higher anchor values are better (CFNAI)
+    # The anchor series code must match the start of a feature name in that group.
+    sign_anchors:
+      rates:
+        series: "T10Y2Y"
+        good_direction: "high"   # High T10Y2Y = steep curve = accommodative = good
+      real_economy:
+        series: "CFNAI"
+        good_direction: "high"   # High CFNAI = strong activity = good real economy
+      credit:
+        series: "NFCI"
+        good_direction: "low"    # Low NFCI = easy financial conditions = good
+      volatility:
+        series: "VIXCLS"
+        good_direction: "low"    # Low VIX = calm markets = good
+  cross_group_correlation:
+    # Warn if any cross-group PC pair exceeds this absolute Pearson correlation in IS data.
+    # PCA makes within-group features orthogonal; this catches cross-group redundancy.
+    warn_threshold: 0.65
+
+# Transmat mixing-time diagnostic horizon (trading days).
+# evaluate_transmat_sanity() computes total-variation distance at A^n_mix.
+# ~20 trading days (~1 month) is the standard horizon for regime mixing diagnostics.
+evaluation:
+  transmat_sanity:
+    n_mix: 20

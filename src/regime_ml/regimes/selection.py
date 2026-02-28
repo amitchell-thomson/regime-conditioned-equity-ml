@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple
+
 
 def _get(d: Dict[str, Any], path: str, default=np.nan):
     """Safe nested getter: path like 'macro_coherence.maha_median'."""
@@ -11,22 +12,44 @@ def _get(d: Dict[str, Any], path: str, default=np.nan):
         cur = cur[k]
     return cur
 
-def _range_score(x: float, lo: float, hi: float, slack: float = 0.5) -> float:
-    """
-    Score in [0,1]. Best inside [lo,hi]. Linear decay outside.
-    slack controls decay width as a fraction of band width.
+
+def _soft_score(
+    x: float, optimal: float, lo: float, hi: float, slack: float = 0.5
+) -> float:
+    """Score in [0, 1]. Returns 1.0 at optimal; decays linearly outward.
+
+    Within [lo, hi]: linear gradient from 0.5 at the boundaries to 1.0 at optimal.
+    Outside [lo, hi]: decays linearly from 0.5 at the boundary to 0.0 at
+    lo − slack·width (or hi + slack·width).
+
+    This replaces the flat-top _range_score which gave 1.0 everywhere inside
+    [lo, hi], making models within the range indistinguishable.
+
+    Args:
+        x:       Metric value to score.
+        optimal: Ideal value — receives score 1.0.
+        lo, hi:  Acceptable range boundaries — receive score 0.5.
+        slack:   Decay width beyond boundaries as fraction of (hi - lo).
     """
     if not np.isfinite(x):
         return 0.0
     width = hi - lo
     if width <= 0:
         return 0.0
+    opt = float(np.clip(optimal, lo, hi))
     s = slack * width
     if lo <= x <= hi:
-        return 1.0
-    if x < lo:
-        return max(0.0, 1.0 - (lo - x) / max(s, 1e-12))
-    return max(0.0, 1.0 - (x - hi) / max(s, 1e-12))
+        if x <= opt:
+            span = opt - lo
+            return float(0.5 + 0.5 * (x - lo) / span) if span > 1e-12 else 1.0
+        else:
+            span = hi - opt
+            return float(0.5 + 0.5 * (hi - x) / span) if span > 1e-12 else 1.0
+    elif x < lo:
+        return float(max(0.0, 0.5 * (x - (lo - s)) / s)) if s > 1e-12 else 0.0
+    else:  # x > hi
+        return float(max(0.0, 0.5 * (hi + s - x) / s)) if s > 1e-12 else 0.0
+
 
 def select_best_hmm_model(
     results: Dict[str, Any],
@@ -35,9 +58,13 @@ def select_best_hmm_model(
     max_share: float = 0.80,
     oos_min_share: float = 0.02,
     oos_max_share: float = 0.85,
-    max_implied_duration: float = 3000.0,
-    maha_min_quantile: float = 0.10,   # used to set a data-driven threshold
-    top_n: int = 10
+    max_implied_duration: float = 400.0,
+    min_exit_paths_required: int = 2,
+    maha_min_quantile: float = 0.10,
+    top_n: int = 10,
+    weights: Dict[str, float] | None = None,
+    soft_score_cfg: Dict[str, Any] | None = None,
+    churn_scores: Dict[str, float] | None = None,
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     """
     Returns:
@@ -45,36 +72,77 @@ def select_best_hmm_model(
       leaderboard_df (top_n survivors, with score breakdown),
       rejected_df (model_id + rejection reason)
     """
+    # --- Scoring weights (override via weights kwarg or use defaults)
+    # macro/oos now use absolute _soft_score (not percentile rank), so they are
+    # no longer biased toward fewer-regime models. BIC raised to 0.15 to give
+    # complexity penalty stronger influence when n_regimes differs.
+    _default_weights = {
+        "macro": 0.20,
+        "transitions": 0.20,
+        "stability": 0.20,
+        "oos": 0.15,
+        "bic": 0.10,
+        "churn": 0.15,
+    }
+    w = {**_default_weights, **(weights or {})}
+    # If churn_scores not provided, zero out churn so it doesn't affect ranking.
+    # Remaining weights are renormalised to sum to 1.0.
+    if churn_scores is None:
+        w["churn"] = 0.0
+    w_total = sum(w.values())
+    w = {k: v / w_total for k, v in w.items()}
+
     rows = []
     for model_id, r in results.items():
-        rows.append({
-            "model_id": model_id,
-
-            # --- FULL sample
-            "tv_valid": bool(_get(r, "transition_matrix_sanity.tv_distance_valid", False)),
-            "tv20": _get(r, "transition_matrix_sanity.tv_distance_20d"),
-            "max_implied_duration": _get(r, "transition_matrix_sanity.max_implied_duration"),
-            "median_implied_duration": _get(r, "transition_matrix_sanity.median_implied_duration"),
-            "max_offdiag": _get(r, "transition_matrix_sanity.max_offdiag_transition"),
-
-            "min_share": _get(r, "regime_stability.min_regime_share"),
-            "max_share": _get(r, "regime_stability.max_regime_share"),
-            "n_transitions": _get(r, "regime_stability.n_transitions"),
-            "avg_persistence": _get(r, "regime_stability.avg_persistence"),
-
-            "maha_min": _get(r, "macro_coherence.maha_min"),
-            "maha_median": _get(r, "macro_coherence.maha_median"),
-            "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
-
-            "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
-
-            # --- OOS slice (structural robustness)
-            "oos_min_share": _get(r, "out_of_sample.regime_stability.min_regime_share"),
-            "oos_max_share": _get(r, "out_of_sample.regime_stability.max_regime_share"),
-            "oos_n_transitions": _get(r, "out_of_sample.regime_stability.n_transitions"),
-            "oos_avg_persistence": _get(r, "out_of_sample.regime_stability.avg_persistence"),
-            "oos_anova_r2_mean": _get(r, "out_of_sample.macro_coherence.anova_r2_mean"),
-        })
+        rows.append(
+            {
+                "model_id": model_id,
+                # --- FULL sample
+                "tv_valid": bool(
+                    _get(r, "transition_matrix_sanity.tv_distance_valid", False)
+                ),
+                "tv20": _get(r, "transition_matrix_sanity.tv_distance"),
+                "max_implied_duration": _get(
+                    r, "transition_matrix_sanity.max_implied_duration"
+                ),
+                "median_implied_duration": _get(
+                    r, "transition_matrix_sanity.median_implied_duration"
+                ),
+                "max_offdiag": _get(
+                    r, "transition_matrix_sanity.max_offdiag_transition"
+                ),
+                "min_exit_paths": _get(
+                    r, "transition_matrix_sanity.min_exit_paths"
+                ),
+                "min_share": _get(r, "regime_stability.min_regime_share"),
+                "max_share": _get(r, "regime_stability.max_regime_share"),
+                "n_transitions": _get(r, "regime_stability.n_transitions"),
+                "avg_persistence": _get(r, "regime_stability.avg_persistence"),
+                "maha_min": _get(r, "macro_coherence.maha_min"),
+                "maha_median": _get(r, "macro_coherence.maha_median"),
+                "anova_r2_mean": _get(r, "macro_coherence.anova_r2_mean"),
+                "entropy_mean": _get(r, "entropy_balance.entropy_balance"),
+                # --- BIC / AIC (complexity penalties) — IS only: penalty must be
+                # based on the same data the model was fitted on.
+                "bic_is": _get(r, "bic_is"),
+                # --- OOS slice (structural robustness)
+                "oos_min_share": _get(
+                    r, "out_of_sample.regime_stability.min_regime_share"
+                ),
+                "oos_max_share": _get(
+                    r, "out_of_sample.regime_stability.max_regime_share"
+                ),
+                "oos_n_transitions": _get(
+                    r, "out_of_sample.regime_stability.n_transitions"
+                ),
+                "oos_avg_persistence": _get(
+                    r, "out_of_sample.regime_stability.avg_persistence"
+                ),
+                "oos_anova_r2_mean": _get(
+                    r, "out_of_sample.macro_coherence.anova_r2_mean"
+                ),
+            }
+        )
 
     df = pd.DataFrame(rows)
 
@@ -94,64 +162,171 @@ def select_best_hmm_model(
             rej.append({"model_id": df.loc[i, "model_id"], "reason": reason})
         keep_mask &= ~mask
 
-    reject(~df["tv_valid"], "transition_matrix: stationary invalid (tv_distance_valid=False)")
+    # A non-stationary transition matrix has no meaningful long-run distribution;
+    # regime labels have no stable economic interpretation.
+    reject(
+        ~df["tv_valid"],
+        "transition_matrix: stationary invalid (tv_distance_valid=False)",
+    )
+    # A regime with <3% share is economically inert — too rare to build a strategy on.
+    # A regime with >80% share dominates the sample, implying near-trivial segmentation.
     reject(df["min_share"] < min_share, f"dead regime (min_share < {min_share})")
     reject(df["max_share"] > max_share, f"collapsed regime (max_share > {max_share})")
-    reject(df["max_implied_duration"] > max_implied_duration, f"absorbing regime (max_implied_duration > {max_implied_duration})")
-    reject(df["maha_min"] < maha_thresh, f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)")
+    # Implied duration above threshold: states that are too sticky cannot respond to
+    # genuine regime changes and indicate EM converged to an over-penalised solution.
+    reject(
+        df["max_implied_duration"] > max_implied_duration,
+        f"absorbing regime (max_implied_duration > {max_implied_duration})",
+    )
+    # Structurally isolated states: fewer than min_exit_paths reachable exit states
+    # means a state can only leave via one path. This forces cascade transitions and
+    # produces short whipsaw episodes when the model routes through intermediate states.
+    if df["min_exit_paths"].notna().any():
+        reject(
+            df["min_exit_paths"] < min_exit_paths_required,
+            f"isolated state (min_exit_paths < {min_exit_paths_required})",
+        )
+    # Mahalanobis distance below the 10th percentile means at least two regimes are
+    # indistinguishable in macro feature space — a degenerate, redundant solution.
+    reject(
+        df["maha_min"] < maha_thresh,
+        f"redundant regimes (maha_min below {maha_min_quantile:.0%} quantile)",
+    )
 
-    # OOS robustness (only apply if OOS metrics exist)
-    if df["oos_min_share"].notna().any(): # type: ignore
-        reject(df["oos_min_share"] < oos_min_share, f"OOS dead regime (oos_min_share < {oos_min_share})")
-    if df["oos_max_share"].notna().any(): # type: ignore
-        reject(df["oos_max_share"] > oos_max_share, f"OOS collapsed regime (oos_max_share > {oos_max_share})")
+    # OOS robustness: dead/collapsed regimes OOS signal overfitting to the training period.
+    if df["oos_min_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
+        reject(
+            df["oos_min_share"] < oos_min_share,
+            f"OOS dead regime (oos_min_share < {oos_min_share})",
+        )
+    if df["oos_max_share"].notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
+        reject(
+            df["oos_max_share"] > oos_max_share,
+            f"OOS collapsed regime (oos_max_share > {oos_max_share})",
+        )
 
     survivors = df[keep_mask].copy()
-    rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id","reason"]) # type: ignore
+    rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id", "reason"])  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
 
     if survivors.empty:
-        raise ValueError("No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full.")
+        raise ValueError(
+            "No surviving models after degeneracy filters. Loosen thresholds or inspect why rejected_df is full."
+        )
 
-    # --- Scoring (simple, robust)
-    # Normalize some "higher is better" metrics via ranks (robust to scale)
-    def rrank(s, ascending=False):
+    # --- Soft-score bounds (from config, with defaults matching regime_config.yaml)
+    _default_ss: Dict[str, Any] = {
+        "duration": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 0.75},
+        "turnover": {"optimal": 0.15, "lo": 0.05, "hi": 0.30, "slack": 1.0},
+        "persistence": {"optimal": 90.0, "lo": 20.0, "hi": 200.0, "slack": 1.0},
+        # Absolute macro coherence thresholds. Using absolute scores instead of
+        # percentile ranks removes the inherent bias toward fewer-regime models:
+        # 3-regime models always have higher Mahalanobis distances (fewer clusters
+        # share the same feature space), causing percentile ranking to unfairly
+        # inflate their macro_score over valid 4/5-regime models. Both 3- and 4-
+        # regime models with maha_median ~2.0 and anova_r2 ~0.33 are equally good;
+        # BIC should be the primary discriminator when n_regimes differs.
+        "maha": {"optimal": 2.0, "lo": 1.0, "hi": 4.0, "slack": 0.5},
+        "anova": {"optimal": 0.35, "lo": 0.10, "hi": 0.60, "slack": 0.5},
+    }
+    _cfg_ss: Dict[str, Any] = soft_score_cfg or {}
+    ss: Dict[str, Any] = {
+        k: {**_default_ss[k], **_cfg_ss.get(k, {})} for k in _default_ss
+    }
+
+    # --- Scoring
+    # Percentile rank: maps a Series to [0,1] where higher rank = better model.
+    # Only used for metrics that are directly comparable across models with the
+    # same n_regimes (transitions, stability). NOT used for macro coherence metrics
+    # (Mahalanobis, ANOVA R²) — those use absolute _soft_score thresholds instead.
+    def rrank(s: pd.Series, ascending: bool = False) -> pd.Series:
         return s.rank(pct=True, ascending=ascending)
 
-    # Macro score (higher better)
-    macro = 0.5 * rrank(survivors["maha_median"], ascending=True) + 0.5 * rrank(survivors["anova_r2_mean"], ascending=True)
+    # Macro coherence: absolute _soft_score against thresholds from config.
+    # This avoids the cross-n_regimes bias in percentile ranking: 3-regime models
+    # always have larger Mahalanobis distances (fewer clusters per feature space)
+    # and would rank 1st even when a 4-regime model is equally good in absolute
+    # terms. BIC (not rank) should be the primary n_regimes discriminator.
+    maha_score = survivors["maha_median"].apply(
+        lambda x: _soft_score(x, **ss["maha"])
+    )
+    anova_score = survivors["anova_r2_mean"].apply(
+        lambda x: _soft_score(x, **ss["anova"])
+    )
+    macro = 0.5 * maha_score + 0.5 * anova_score
 
-    # Transition realism: range preferences + penalty
-    dur_score = survivors["median_implied_duration"].apply(lambda x: _range_score(x, 20, 200, slack=0.75)) # type: ignore
-    tv_score = survivors["tv20"].apply(lambda x: _range_score(x, 0.05, 0.30, slack=1.0)) if survivors["tv20"].notna().any() else 0.0 # type: ignore
-    off_pen  = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
+    # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
+    # _soft_score replaces the flat-top _range_score so within-range models are ranked
+    dur_score = survivors["median_implied_duration"].apply(  # type: ignore[arg-type]
+        lambda x: _soft_score(x, **ss["duration"])
+    )
+    tv_score = (
+        survivors["tv20"].apply(lambda x: _soft_score(x, **ss["turnover"]))  # type: ignore[arg-type]
+        if survivors["tv20"].notna().any()
+        else 0.0
+    )
+    off_pen = rrank(
+        survivors["max_offdiag"], ascending=False
+    )  # lower offdiag => higher rank
     trans = 0.45 * dur_score + 0.35 * tv_score + 0.20 * off_pen
 
-    # Stability/usability: less churn, decent persistence, not overly certain
-    churn = rrank(survivors["n_transitions"], ascending=False)  # lower transitions => higher rank
-    pers  = survivors["avg_persistence"].apply(lambda x: _range_score(x, 20, 200, slack=1.0)) # type: ignore
-    ent   = rrank(survivors["entropy_mean"], ascending=True)    # higher entropy => higher rank
+    # Stability: less churn, decent persistence (~90 days), not overly certain
+    churn = rrank(survivors["n_transitions"], ascending=False)
+    pers = survivors["avg_persistence"].apply(  # type: ignore[arg-type]
+        lambda x: _soft_score(x, **ss["persistence"])
+    )
+    ent = rrank(survivors["entropy_mean"], ascending=True)
     stab = 0.45 * churn + 0.35 * pers + 0.20 * ent
 
-    # OOS robustness penalty/bonus
-    # Encourage macro coherence not collapsing OOS:
-    if survivors["oos_anova_r2_mean"].notna().any(): # type: ignore
-        oos_macro = rrank(survivors["oos_anova_r2_mean"], ascending=True)
+    # OOS robustness: absolute _soft_score using same anova thresholds as IS.
+    # Percentile ranking here would also be biased toward 3-regime models (which
+    # tend to have higher OOS ANOVA R² as a structural artefact of fewer clusters).
+    oos_macro: pd.Series | float = (
+        survivors["oos_anova_r2_mean"].apply(
+            lambda x: _soft_score(x, **ss["anova"])
+        )
+        if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
+        else pd.Series(0.0, index=survivors.index)
+    )
+
+    # BIC: lower is better — normalise within survivors, invert so higher = better
+    bic_vals = survivors["bic_is"]
+    if bic_vals.notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow type
+        bic_min, bic_max = float(bic_vals.min()), float(bic_vals.max())
+        bic_score: pd.Series | float = (
+            (bic_max - bic_vals) / (bic_max - bic_min)
+            if bic_max > bic_min
+            else pd.Series(1.0, index=survivors.index)
+        )
     else:
-        oos_macro = 0.0
+        bic_score = 0.0
+
+    # Churn stability: 1.0 = perfectly stable labels across CV folds, 0.0 = always churning.
+    # Defaults to 0.5 (neutral) for models without CV results (non-top candidates).
+    # When churn_scores is None, w["churn"] is already 0.0 so this has no effect on ranking.
+    if churn_scores is not None:
+        churn_stab = survivors["model_id"].map(
+            lambda mid: 1.0 - float(churn_scores.get(mid, 0.5))
+        )
+    else:
+        churn_stab = pd.Series(0.5, index=survivors.index)
 
     survivors["macro_score"] = macro
     survivors["transition_score"] = trans
     survivors["stability_score"] = stab
     survivors["oos_macro_score"] = oos_macro
+    survivors["bic_score"] = bic_score
+    survivors["churn_stability"] = churn_stab
 
     survivors["final_score"] = (
-        0.40 * survivors["macro_score"] +
-        0.30 * survivors["transition_score"] +
-        0.25 * survivors["stability_score"] +
-        0.05 * survivors["oos_macro_score"]
+        w["macro"] * survivors["macro_score"]
+        + w["transitions"] * survivors["transition_score"]
+        + w["stability"] * survivors["stability_score"]
+        + w["oos"] * survivors["oos_macro_score"]
+        + w["bic"] * survivors["bic_score"]
+        + w.get("churn", 0.0) * survivors["churn_stability"]
     )
 
-    leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True) # type: ignore
+    leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow
     best_model_id = str(leaderboard.loc[0, "model_id"])
 
     return best_model_id, leaderboard, rejected_df
