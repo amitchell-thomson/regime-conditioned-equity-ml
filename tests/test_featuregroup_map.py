@@ -24,17 +24,17 @@ def test_known_series_map_correctly():
     Dropped series (DGS2, PCEPILFE, etc.) map to 'unknown'.
     """
     features = [
-        "NFCI_level_zscore_50",       # credit
-        "T10Y3M_level_zscore_252",    # rates
-        "CPIAUCSL_yoy_zscore_36",     # inflation
-        "CFNAI_level_zscore_36",      # real_economy
-        "INDPRO_yoy_zscore_36",       # real_economy
-        "ICSA_ma_4_zscore_50",        # real_economy
-        "UNRATE_level_zscore_36",     # real_economy
-        "PAYEMS_yoy_zscore_36",       # real_economy
-        "BAA10Y_level_zscore_252",    # credit
-        "VIXCLS_level_zscore_126",    # volatility
-        "DGS2_level_zscore_252",      # dropped → unknown
+        "NFCI_level_zscore_50",  # credit
+        "T10Y3M_level_zscore_252",  # rates
+        "CPIAUCSL_yoy_zscore_36",  # inflation
+        "CFNAI_level_zscore_36",  # real_economy
+        "INDPRO_yoy_zscore_36",  # real_economy
+        "ICSA_ma_4_zscore_50",  # real_economy
+        "UNRATE_level_zscore_36",  # real_economy
+        "PAYEMS_yoy_zscore_36",  # real_economy
+        "BAA10Y_level_zscore_252",  # credit
+        "VIXCLS_level_zscore_126",  # volatility
+        "DGS2_level_zscore_252",  # dropped → unknown
     ]
     result = build_featuregroup_map(features)
     assert result["NFCI_level_zscore_50"] == "credit"
@@ -68,6 +68,6 @@ def test_no_parquet_io(monkeypatch):
 
     # If load_dataframe is still imported and called, this test will catch it
     # by asserting the module no longer imports it
-    assert not hasattr(
-        mod, "load_dataframe"
-    ), "build_featuregroup_map.py should not import load_dataframe after the refactor"
+    assert not hasattr(mod, "load_dataframe"), (
+        "build_featuregroup_map.py should not import load_dataframe after the refactor"
+    )

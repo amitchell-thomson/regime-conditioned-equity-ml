@@ -3,7 +3,6 @@
 import logging
 import re
 
-import pytest
 
 from regime_ml.utils.logging import configure_pipeline_logging
 
@@ -20,9 +19,9 @@ class TestConfigurePipelineLogging:
         configure_pipeline_logging(tmp_path)
         log_files = list(tmp_path.glob("*.log"))
         name = log_files[0].name
-        assert re.match(
-            r"pipeline_\d{8}_\d{6}\.log", name
-        ), f"Log filename '{name}' does not match expected pattern"
+        assert re.match(r"pipeline_\d{8}_\d{6}\.log", name), (
+            f"Log filename '{name}' does not match expected pattern"
+        )
 
     def test_log_file_contains_emitted_messages(self, tmp_path):
         """Messages logged to regime_ml are written to the file."""
@@ -47,9 +46,9 @@ class TestConfigurePipelineLogging:
         root_handler_count_before = len(logging.getLogger().handlers)
         configure_pipeline_logging(tmp_path)
         root_handler_count_after = len(logging.getLogger().handlers)
-        assert (
-            root_handler_count_after == root_handler_count_before
-        ), "configure_pipeline_logging must not add handlers to the root logger"
+        assert root_handler_count_after == root_handler_count_before, (
+            "configure_pipeline_logging must not add handlers to the root logger"
+        )
 
     def teardown_method(self, method):
         """Remove any FileHandlers added to the regime_ml logger during a test."""

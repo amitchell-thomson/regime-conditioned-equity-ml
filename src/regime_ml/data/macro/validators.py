@@ -167,7 +167,9 @@ def validate_data(
 
     # Check sorting
     is_sorted = df[["series_code", "date"]].equals(
-        df[["series_code", "date"]].sort_values(["series_code", "date"]).reset_index(drop=True)  # type: ignore[index]  # pandas boolean/multi-col indexing — mypy cannot narrow DataFrame.__getitem__
+        df[["series_code", "date"]]
+        .sort_values(["series_code", "date"])
+        .reset_index(drop=True)  # type: ignore[index]  # pandas boolean/multi-col indexing — mypy cannot narrow DataFrame.__getitem__
     )
     report["statistics"]["is_sorted"] = is_sorted
 
@@ -227,7 +229,9 @@ def validate_data(
             )
 
             if "native_frequency" in series_df.columns:
-                series_report["native_frequency"] = series_df["native_frequency"].iloc[0]  # type: ignore[index]  # pandas Series.iloc[0] — mypy cannot infer scalar return type
+                series_report["native_frequency"] = series_df["native_frequency"].iloc[
+                    0
+                ]  # type: ignore[index]  # pandas Series.iloc[0] — mypy cannot infer scalar return type
 
         # Check for constant values (zero variance)
         if series_df["value"].std() == 0:

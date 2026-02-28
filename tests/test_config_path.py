@@ -25,9 +25,9 @@ def test_macro_data_path_env_var_overrides_config(monkeypatch, tmp_path):
 
     cfg = load_configs()
     resolved_path = cfg["macro_data"]["regime_universe"]["data_path"]
-    assert resolved_path == str(
-        tmp_path
-    ), f"Expected MACRO_DATA_PATH={tmp_path} to override YAML, got {resolved_path}"
+    assert resolved_path == str(tmp_path), (
+        f"Expected MACRO_DATA_PATH={tmp_path} to override YAML, got {resolved_path}"
+    )
 
 
 def test_macro_data_path_not_set_uses_yaml(monkeypatch):

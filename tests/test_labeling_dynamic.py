@@ -4,7 +4,6 @@ import textwrap
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from regime_ml.regimes.labeling import label_regimes
@@ -212,9 +211,9 @@ class TestLabelRegimesOutputStructure:
         X, proba, names = _make_pca_features(T=120, K=3)
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         for r in results:
-            assert (
-                -1.0 <= r["confidence"] <= 1.0
-            ), f"confidence={r['confidence']} out of [-1,1]"
+            assert -1.0 <= r["confidence"] <= 1.0, (
+                f"confidence={r['confidence']} out of [-1,1]"
+            )
 
     def test_margin_nonnegative(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
@@ -237,9 +236,9 @@ class TestNoDuplicateArchetypes:
         assigned_keys = [
             r["archetype_key"] for r in results if r["archetype_key"] is not None
         ]
-        assert len(assigned_keys) == len(
-            set(assigned_keys)
-        ), f"Duplicate archetype assignments: {assigned_keys}"
+        assert len(assigned_keys) == len(set(assigned_keys)), (
+            f"Duplicate archetype assignments: {assigned_keys}"
+        )
 
     def test_no_duplicate_archetypes_k4(self, tmp_path):
         arch_path = _synthetic_archetypes_yaml(tmp_path)
@@ -317,9 +316,9 @@ class TestConfidenceThreshold:
         results = label_regimes(X, proba, names, archetypes_path=arch_path)
         # With well-separated synthetic states at least one should be matched
         matched = [r for r in results if r["status"] == "matched"]
-        assert (
-            len(matched) >= 1
-        ), "Expected at least one matched state with well-separated data"
+        assert len(matched) >= 1, (
+            "Expected at least one matched state with well-separated data"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -356,9 +355,9 @@ class TestVaryingK:
         assigned_keys = [
             r["archetype_key"] for r in results if r["archetype_key"] is not None
         ]
-        assert len(assigned_keys) == len(
-            set(assigned_keys)
-        ), "Duplicate archetype keys for K=5"
+        assert len(assigned_keys) == len(set(assigned_keys)), (
+            "Duplicate archetype keys for K=5"
+        )
 
     def test_k_greater_than_archetypes_handled(self, tmp_path):
         """When K > n_archetypes, excess states should be unclassified, not crash."""

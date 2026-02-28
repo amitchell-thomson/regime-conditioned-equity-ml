@@ -4,7 +4,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from regime_ml.features.macro.selection import _check_cross_group_correlation
 
@@ -58,9 +57,9 @@ class TestCheckCrossGroupCorrelation:
         warning_messages = [
             r.message for r in caplog.records if r.levelno == logging.WARNING
         ]
-        assert any(
-            "Cross-group" in m for m in warning_messages
-        ), "Expected a cross-group correlation warning"
+        assert any("Cross-group" in m for m in warning_messages), (
+            "Expected a cross-group correlation warning"
+        )
 
     def test_uses_is_data_only(self, caplog):
         """Correlation is computed on IS rows only; OOS high correlation must not trigger warning."""

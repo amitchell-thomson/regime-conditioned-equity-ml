@@ -127,9 +127,9 @@ def test_strict_staleness_mode_clips_values():
         s, is_new_data=is_new, staleness_mode="strict"
     )
     valid = result.dropna()
-    assert (
-        valid.abs() <= 4.0 + 1e-9
-    ).all(), f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
+    assert (valid.abs() <= 4.0 + 1e-9).all(), (
+        f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
+    )
 
 
 def test_ignore_staleness_mode_clips_values():

@@ -17,7 +17,6 @@ Point-in-time expectations:
 
 import pytest
 import pandas as pd
-import numpy as np
 
 from regime_ml.data.macro.alignment import build_realtime_series
 
@@ -94,9 +93,9 @@ def test_output_schema_required_columns(cfnai_alfred):
     """Output must have exactly: series_code, date, value, series_name, category."""
     result = build_realtime_series(cfnai_alfred)
     required = {"series_code", "date", "value", "series_name", "category"}
-    assert required.issubset(
-        set(result.columns)
-    ), f"Missing columns: {required - set(result.columns)}"
+    assert required.issubset(set(result.columns)), (
+        f"Missing columns: {required - set(result.columns)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +113,9 @@ def test_output_date_column_contains_publication_dates(cfnai_alfred):
         pd.Timestamp("2020-03-30"),
         pd.Timestamp("2020-04-28"),
     }
-    assert (
-        output_dates == expected_pub_dates
-    ), f"Expected pub dates {expected_pub_dates}, got {output_dates}"
+    assert output_dates == expected_pub_dates, (
+        f"Expected pub dates {expected_pub_dates}, got {output_dates}"
+    )
 
 
 def test_output_date_not_obs_dates(cfnai_alfred):
@@ -185,9 +184,9 @@ def test_no_future_values_at_any_output_row(cfnai_alfred):
         assert not causal.empty, f"No causal data for {code} at {pub_date}"
         # row value must be one of the causally available values
         causal_values = set(causal["value"].tolist())
-        assert (
-            row["value"] in causal_values
-        ), f"{code} at {pub_date}: value={row['value']} not in causal set {causal_values}"
+        assert row["value"] in causal_values, (
+            f"{code} at {pub_date}: value={row['value']} not in causal set {causal_values}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -199,9 +198,9 @@ def test_one_row_per_pub_date_per_series(cfnai_alfred):
     """No duplicate (series_code, date) pairs in output."""
     result = build_realtime_series(cfnai_alfred)
     dup_mask = result.duplicated(subset=["series_code", "date"])
-    assert (
-        not dup_mask.any()
-    ), f"Duplicate (series_code, date) rows found:\n{result[dup_mask]}"
+    assert not dup_mask.any(), (
+        f"Duplicate (series_code, date) rows found:\n{result[dup_mask]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +278,6 @@ def test_yaml_use_alfred_defaults_to_false():
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     alfred_cfg = cfg.get("regime_universe", {}).get("alfred", {})
-    assert (
-        alfred_cfg.get("use_alfred") is False
-    ), "alfred.use_alfred should default to false in YAML"
+    assert alfred_cfg.get("use_alfred") is False, (
+        "alfred.use_alfred should default to false in YAML"
+    )

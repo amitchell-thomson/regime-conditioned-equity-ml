@@ -4,7 +4,6 @@ import hashlib
 
 import numpy as np
 import pandas as pd
-import pytest
 
 
 def _make_features(n: int = 50, d: int = 3, seed: int = 0) -> pd.DataFrame:

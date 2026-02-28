@@ -108,9 +108,7 @@ def select_features(
     )
 
     sign_anchors: dict[str, dict] | None = (
-        regime_cfg.get("feature_selection", {})
-        .get("group_pca", {})
-        .get("sign_anchors")
+        regime_cfg.get("feature_selection", {}).get("group_pca", {}).get("sign_anchors")
     )
 
     transformer = GroupPCATransformer(

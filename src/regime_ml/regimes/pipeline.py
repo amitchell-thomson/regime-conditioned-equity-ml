@@ -109,8 +109,7 @@ def _fit_grid(
 
     if not models:
         raise RuntimeError(
-            "_fit_grid: all grid configurations failed. "
-            "Check features and HMM config."
+            "_fit_grid: all grid configurations failed. Check features and HMM config."
         )
     logger.info(
         "_fit_grid: %d/%d configs fitted successfully.",
@@ -159,8 +158,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     logger.info("run_regime_pipeline: loading features from %s", features_path)
     if not features_path.exists():
         raise FileNotFoundError(
-            f"Features file not found: {features_path}. "
-            "Run 'regime-ml features' first."
+            f"Features file not found: {features_path}. Run 'regime-ml features' first."
         )
     features_df = pd.read_parquet(features_path)
     logger.info(
@@ -293,8 +291,12 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         )
         # Exclude episodes with no data overlap (e.g. pre-dataset history).
         # Counting them as failures inflates the miss rate against an unreachable target.
-        reachable = episode_df[episode_df["n_days"] > 0] if not episode_df.empty else episode_df
-        n_matched_episodes = int(reachable["archetype_match"].sum()) if not reachable.empty else 0
+        reachable = (
+            episode_df[episode_df["n_days"] > 0] if not episode_df.empty else episode_df
+        )
+        n_matched_episodes = (
+            int(reachable["archetype_match"].sum()) if not reachable.empty else 0
+        )
         n_episodes = len(reachable)
         logger.info(
             "run_regime_pipeline: episode validation — %d/%d matched.",
@@ -382,9 +384,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     )
 
     # Persist the best model parameters so Phase 3 can load without re-fitting.
-    best_model_path = _resolve(
-        outputs_cfg.get("best_model", "data/regimes/best_model")
-    )
+    best_model_path = _resolve(outputs_cfg.get("best_model", "data/regimes/best_model"))
     best_detector.save(best_model_path)
     logger.info("run_regime_pipeline: saved best model → %s", best_model_path)
 

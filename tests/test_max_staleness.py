@@ -1,6 +1,5 @@
 """Tests for max_staleness_days enforcement in align_to_calendar (Phase 2.3)."""
 
-import numpy as np
 import pandas as pd
 import pytest
 import yaml
@@ -71,9 +70,9 @@ def test_no_max_staleness_preserves_full_ffill():
     aligned = aligned[aligned["series_code"] == "TEST"]
     # Every non-NaN value should be 1.0 (no NaN-out)
     non_null = aligned["value"].dropna()
-    assert (
-        non_null == 1.0
-    ).all(), "Full ffill should preserve all values without limit"
+    assert (non_null == 1.0).all(), (
+        "Full ffill should preserve all values without limit"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +98,9 @@ def test_monthly_series_nans_out_rows_beyond_threshold():
 
     # Rows where days_since_update > 65 must have value=NaN
     beyond = aligned[aligned["days_since_update"] > 65]
-    assert (
-        beyond["value"].isna().all()
-    ), "Rows with days_since_update > 65 must be NaN for monthly series"
+    assert beyond["value"].isna().all(), (
+        "Rows with days_since_update > 65 must be NaN for monthly series"
+    )
 
 
 def test_monthly_threshold_boundary_is_inclusive():
@@ -117,9 +116,9 @@ def test_monthly_threshold_boundary_is_inclusive():
 
     exactly_at = aligned[aligned["days_since_update"] == 65]
     if not exactly_at.empty:
-        assert (
-            exactly_at["value"] == 1.0
-        ).all(), "Row at threshold should NOT be NaN-out"
+        assert (exactly_at["value"] == 1.0).all(), (
+            "Row at threshold should NOT be NaN-out"
+        )
 
     just_beyond = aligned[aligned["days_since_update"] == 66]
     if not just_beyond.empty:
@@ -162,9 +161,9 @@ def test_daily_series_nans_out_beyond_threshold():
     aligned = aligned[aligned["series_code"] == "DAILY"]
 
     beyond = aligned[aligned["days_since_update"] > 5]
-    assert (
-        beyond["value"].isna().all()
-    ), "Daily series: rows with days_since_update > 5 must be NaN"
+    assert beyond["value"].isna().all(), (
+        "Daily series: rows with days_since_update > 5 must be NaN"
+    )
 
     within = aligned[aligned["days_since_update"] <= 5]
     assert within["value"].dropna().notna().all()
@@ -229,9 +228,9 @@ def test_yaml_config_has_required_staleness_keys():
         assert key in staleness, f"max_staleness_days missing key: {key}"
     # Values should be positive integers
     for key, val in staleness.items():
-        assert (
-            isinstance(val, int) and val > 0
-        ), f"{key}: expected positive int, got {val!r}"
+        assert isinstance(val, int) and val > 0, (
+            f"{key}: expected positive int, got {val!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

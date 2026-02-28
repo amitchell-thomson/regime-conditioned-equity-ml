@@ -43,6 +43,8 @@ def select_data(raw_data: pd.DataFrame, cfg: Dict[str, Any]) -> pd.DataFrame:
 
     # Sort by series code and date for consistency
     if "date" in df_selected.columns:
-        df_selected = df_selected.sort_values(by=["series_code", "date"]).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow assignment
+        df_selected = df_selected.sort_values(by=["series_code", "date"]).reset_index(
+            drop=True
+        )  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow assignment
 
     return df_selected

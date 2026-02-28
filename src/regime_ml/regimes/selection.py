@@ -111,9 +111,7 @@ def select_best_hmm_model(
                 "max_offdiag": _get(
                     r, "transition_matrix_sanity.max_offdiag_transition"
                 ),
-                "min_exit_paths": _get(
-                    r, "transition_matrix_sanity.min_exit_paths"
-                ),
+                "min_exit_paths": _get(r, "transition_matrix_sanity.min_exit_paths"),
                 "min_share": _get(r, "regime_stability.min_regime_share"),
                 "max_share": _get(r, "regime_stability.max_regime_share"),
                 "n_transitions": _get(r, "regime_stability.n_transitions"),
@@ -206,7 +204,11 @@ def select_best_hmm_model(
         )
 
     survivors = df[keep_mask].copy()
-    rejected_df = pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id", "reason"])  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
+    rejected_df = (
+        pd.DataFrame(rej).sort_values(["reason", "model_id"])
+        if rej
+        else pd.DataFrame(columns=["model_id", "reason"])
+    )  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
 
     if survivors.empty:
         raise ValueError(
@@ -246,9 +248,7 @@ def select_best_hmm_model(
     # always have larger Mahalanobis distances (fewer clusters per feature space)
     # and would rank 1st even when a 4-regime model is equally good in absolute
     # terms. BIC (not rank) should be the primary n_regimes discriminator.
-    maha_score = survivors["maha_median"].apply(
-        lambda x: _soft_score(x, **ss["maha"])
-    )
+    maha_score = survivors["maha_median"].apply(lambda x: _soft_score(x, **ss["maha"]))
     anova_score = survivors["anova_r2_mean"].apply(
         lambda x: _soft_score(x, **ss["anova"])
     )
@@ -281,9 +281,7 @@ def select_best_hmm_model(
     # Percentile ranking here would also be biased toward 3-regime models (which
     # tend to have higher OOS ANOVA R² as a structural artefact of fewer clusters).
     oos_macro: pd.Series | float = (
-        survivors["oos_anova_r2_mean"].apply(
-            lambda x: _soft_score(x, **ss["anova"])
-        )
+        survivors["oos_anova_r2_mean"].apply(lambda x: _soft_score(x, **ss["anova"]))
         if survivors["oos_anova_r2_mean"].notna().any()  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow after column indexing
         else pd.Series(0.0, index=survivors.index)
     )
@@ -326,7 +324,11 @@ def select_best_hmm_model(
         + w.get("churn", 0.0) * survivors["churn_stability"]
     )
 
-    leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow
+    leaderboard = (
+        survivors.sort_values("final_score", ascending=False)
+        .head(top_n)
+        .reset_index(drop=True)
+    )  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow
     best_model_id = str(leaderboard.loc[0, "model_id"])
 
     return best_model_id, leaderboard, rejected_df

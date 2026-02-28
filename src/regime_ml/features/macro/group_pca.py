@@ -124,9 +124,8 @@ class GroupPCATransformer:
                 )
                 if anchor_idx is not None:
                     loading = float(pca.components_[0, anchor_idx])
-                    should_flip = (
-                        (good_direction == "low" and loading > 0)
-                        or (good_direction == "high" and loading < 0)
+                    should_flip = (good_direction == "low" and loading > 0) or (
+                        good_direction == "high" and loading < 0
                     )
                     if should_flip:
                         pca.components_[0] *= -1
@@ -159,7 +158,8 @@ class GroupPCATransformer:
             self._group_features[group] = feats
 
             var_ratios = ", ".join(
-                f"PC{i+1}={r:.1%}" for i, r in enumerate(pca.explained_variance_ratio_)
+                f"PC{i + 1}={r:.1%}"
+                for i, r in enumerate(pca.explained_variance_ratio_)
             )
             logger.info(
                 "Group '%s': %d features → %d PCs | explained variance: %s",

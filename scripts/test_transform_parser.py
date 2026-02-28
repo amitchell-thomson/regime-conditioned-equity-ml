@@ -41,7 +41,7 @@ def main():
 
         # Show generated feature names
         feature_names = parser.get_feature_names(ticker_name, chains)
-        print(f"\n  Generated feature names:")
+        print("\n  Generated feature names:")
         for fname in feature_names:
             print(f"    - {fname}")
 

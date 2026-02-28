@@ -1,7 +1,6 @@
 """Tests for HMMRegimeDetector.save() / load() — JSON/numpy parameter format (Phase 7.2)."""
 
 import json
-import re
 
 import numpy as np
 import pandas as pd
@@ -130,6 +129,6 @@ class TestHMMSaveLoad:
         source = (
             Path(__file__).parent.parent / "src" / "regime_ml" / "regimes" / "hmm.py"
         ).read_text()
-        assert (
-            "import pickle" not in source
-        ), "hmm.py still contains 'import pickle' — pickle must be replaced with JSON/numpy"
+        assert "import pickle" not in source, (
+            "hmm.py still contains 'import pickle' — pickle must be replaced with JSON/numpy"
+        )

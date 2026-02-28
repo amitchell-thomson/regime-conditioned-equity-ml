@@ -24,9 +24,9 @@ def test_convergence_warning_fires(caplog):
     with caplog.at_level(logging.WARNING, logger="regime_ml"):
         detector.fit(X)
 
-    assert any(
-        "did not converge" in r.message for r in caplog.records
-    ), "Expected a convergence WARNING log record from regime_ml.regimes.hmm"
+    assert any("did not converge" in r.message for r in caplog.records), (
+        "Expected a convergence WARNING log record from regime_ml.regimes.hmm"
+    )
 
 
 def test_convergence_warning_not_fired_when_converged(caplog):

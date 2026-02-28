@@ -2,7 +2,6 @@
 
 import pandas as pd
 import numpy as np
-import pytest
 
 from regime_ml.data.macro.alignment import add_staleness_indicators, align_to_calendar
 
@@ -30,9 +29,9 @@ def test_repeated_value_both_get_is_new_data_true():
     df = _make_df("CFNAI", ["2020-01-01", "2020-02-01"], [0.00, 0.00])
     calendar = pd.bdate_range("2020-01-01", "2020-03-01")
     result = add_staleness_indicators(df, calendar)
-    assert result[
-        "is_new_data"
-    ].all(), "All pre-alignment rows must be is_new_data=True"
+    assert result["is_new_data"].all(), (
+        "All pre-alignment rows must be is_new_data=True"
+    )
 
 
 def test_single_row_is_new_data_true():
@@ -100,9 +99,9 @@ def test_forward_filled_rows_get_nan_is_new_data():
         (cfnai["date"] > pd.Timestamp("2020-01-02"))
         & (cfnai["date"] < pd.Timestamp("2020-02-03"))
     ]
-    assert (
-        between["is_new_data"].isna().all()
-    ), "Forward-filled rows between real observations must have NaN is_new_data"
+    assert between["is_new_data"].isna().all(), (
+        "Forward-filled rows between real observations must have NaN is_new_data"
+    )
 
 
 def test_real_observation_dates_have_true_is_new_data_after_alignment():
@@ -115,9 +114,9 @@ def test_real_observation_dates_have_true_is_new_data_after_alignment():
     vix = df_aligned[df_aligned["series_code"] == "VIX"]
     pub_dates = pd.to_datetime(["2020-01-02", "2020-01-05"])
     pub_rows = vix[vix["date"].isin(pub_dates)]
-    assert (
-        pub_rows["is_new_data"] == True
-    ).all(), "Original publication dates must have is_new_data=True after alignment"
+    assert (pub_rows["is_new_data"] == True).all(), (
+        "Original publication dates must have is_new_data=True after alignment"
+    )
 
 
 # ---------------------------------------------------------------------------

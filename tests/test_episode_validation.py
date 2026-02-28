@@ -203,9 +203,9 @@ class TestArchetypeMatch:
         expected_pct = df.loc[0, "expected_pct"]
         assert 0.0 <= expected_pct <= 1.0
         # State 0 = expansion; ~150 of ~200 days in episode
-        assert (
-            expected_pct > 0.5
-        ), f"expected_pct={expected_pct} should be >0.5 (150 of ~200 days)"
+        assert expected_pct > 0.5, (
+            f"expected_pct={expected_pct} should be >0.5 (150 of ~200 days)"
+        )
 
 
 # ---------------------------------------------------------------------------

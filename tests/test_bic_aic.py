@@ -6,7 +6,6 @@ import pytest
 
 from regime_ml.regimes.hmm import (
     HMMRegimeDetector,
-    fit_best_of_n_seeds,
     initialise_emissions,
     initialise_probabilities,
     initialise_transitions,
@@ -98,9 +97,9 @@ class TestBicAic:
         """BIC penalises more than AIC when n > e^2 ≈ 7.4 (i.e. always in practice)."""
         det, X = _fitted_detector(n=300)
         # BIC penalty: p * log(n), AIC penalty: 2p  → BIC > AIC when log(n) > 2
-        assert det.bic(X) > det.aic(
-            X
-        ), "BIC should exceed AIC for n=300 since log(300) > 2"
+        assert det.bic(X) > det.aic(X), (
+            "BIC should exceed AIC for n=300 since log(300) > 2"
+        )
 
     def test_bic_penalises_complexity(self):
         """A more complex model (larger K) should have a higher BIC on random data
@@ -141,9 +140,9 @@ class TestBicAic:
 
         # On pure noise, the 4-regime model should not be penalised to a lower BIC;
         # we only assert det4._n_params() > det2._n_params() as the penalty direction.
-        assert (
-            det4._n_params() > det2._n_params()
-        ), "K=4 model must have more free parameters than K=2 model."
+        assert det4._n_params() > det2._n_params(), (
+            "K=4 model must have more free parameters than K=2 model."
+        )
 
     def test_bic_raises_on_unfitted(self):
         det = HMMRegimeDetector(n_regimes=2)

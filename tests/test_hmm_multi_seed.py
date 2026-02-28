@@ -79,9 +79,9 @@ def test_best_of_n_ll_is_optimal():
         if not sanity["tv_distance_valid"]:
             # Correctly excluded: absorbing state; LL comparison not meaningful.
             continue
-        assert (
-            best_ll >= seed_ll - 1e-6
-        ), f"Returned LL {best_ll:.4f} is below valid-transmat seed {seed} LL {seed_ll:.4f}."
+        assert best_ll >= seed_ll - 1e-6, (
+            f"Returned LL {best_ll:.4f} is below valid-transmat seed {seed} LL {seed_ll:.4f}."
+        )
 
 
 def test_degeneracy_filter_fallback_warning(caplog):
@@ -111,9 +111,9 @@ def test_n_init_seeds_all_logged(caplog):
         and "seed=" in r.message
         and "ll=" in r.message
     ]
-    assert (
-        len(seed_logs) >= 3
-    ), f"Expected at least 3 per-seed log entries, got {len(seed_logs)}."
+    assert len(seed_logs) >= 3, (
+        f"Expected at least 3 per-seed log entries, got {len(seed_logs)}."
+    )
 
 
 def test_is_boundary_enforced():
