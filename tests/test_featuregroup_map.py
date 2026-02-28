@@ -3,34 +3,51 @@
 from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 
-def test_vixcls_maps_to_liquidity():
-    """VIXCLS features must map to 'liquidity' as declared in regime_universe.yaml."""
+def test_vixcls_maps_to_volatility():
+    """VIXCLS features must map to 'volatility' as declared in regime_universe.yaml."""
     result = build_featuregroup_map(
-        ["VIXCLS_level_zscore_63", "VIXCLS_diff_5_zscore_126"]
+        ["VIXCLS_level_zscore_126", "VIXCLS_level_zscore_63"]
     )
-    assert result["VIXCLS_level_zscore_63"] == "liquidity"
-    assert result["VIXCLS_diff_5_zscore_126"] == "liquidity"
+    assert result["VIXCLS_level_zscore_126"] == "volatility"
+    assert result["VIXCLS_level_zscore_63"] == "volatility"
 
 
 def test_known_series_map_correctly():
-    """Spot-check that other series IDs resolve to their declared categories."""
+    """Spot-check that series IDs resolve to their declared categories.
+
+    Group structure (post-restructure):
+      rates        — FEDFUNDS, DGS10, T10Y2Y, T10Y3M
+      inflation    — CPIAUCSL
+      real_economy — CFNAI, INDPRO, ICSA, UNRATE, PAYEMS
+      credit       — NFCI, BAA10Y
+      volatility   — VIXCLS
+    Dropped series (DGS2, PCEPILFE, etc.) map to 'unknown'.
+    """
     features = [
-        "NFCI_level_zscore_50",  # liquidity
-        "T10Y3M_level_zscore_252",  # rates
-        "DGS2_level_zscore_252",  # rates
-        "PCEPILFE_yoy_zscore_36",  # inflation
-        "CFNAI_level_zscore_36",  # growth
-        "INDPRO_yoy_zscore_36",  # growth
-        "ICSA_ma_4_zscore_50",  # employment
+        "NFCI_level_zscore_50",       # credit
+        "T10Y3M_level_zscore_252",    # rates
+        "CPIAUCSL_yoy_zscore_36",     # inflation
+        "CFNAI_level_zscore_36",      # real_economy
+        "INDPRO_yoy_zscore_36",       # real_economy
+        "ICSA_ma_4_zscore_50",        # real_economy
+        "UNRATE_level_zscore_36",     # real_economy
+        "PAYEMS_yoy_zscore_36",       # real_economy
+        "BAA10Y_level_zscore_252",    # credit
+        "VIXCLS_level_zscore_126",    # volatility
+        "DGS2_level_zscore_252",      # dropped → unknown
     ]
     result = build_featuregroup_map(features)
-    assert result["NFCI_level_zscore_50"] == "liquidity"
+    assert result["NFCI_level_zscore_50"] == "credit"
     assert result["T10Y3M_level_zscore_252"] == "rates"
-    assert result["DGS2_level_zscore_252"] == "rates"
-    assert result["PCEPILFE_yoy_zscore_36"] == "inflation"
-    assert result["CFNAI_level_zscore_36"] == "growth"
-    assert result["INDPRO_yoy_zscore_36"] == "growth"
-    assert result["ICSA_ma_4_zscore_50"] == "employment"
+    assert result["CPIAUCSL_yoy_zscore_36"] == "inflation"
+    assert result["CFNAI_level_zscore_36"] == "real_economy"
+    assert result["INDPRO_yoy_zscore_36"] == "real_economy"
+    assert result["ICSA_ma_4_zscore_50"] == "real_economy"
+    assert result["UNRATE_level_zscore_36"] == "real_economy"
+    assert result["PAYEMS_yoy_zscore_36"] == "real_economy"
+    assert result["BAA10Y_level_zscore_252"] == "credit"
+    assert result["VIXCLS_level_zscore_126"] == "volatility"
+    assert result["DGS2_level_zscore_252"] == "unknown"
 
 
 def test_unknown_ticker_maps_to_unknown():

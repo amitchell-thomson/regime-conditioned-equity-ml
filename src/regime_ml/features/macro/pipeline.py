@@ -137,7 +137,16 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
         # Indicator values (already forward-filled to daily frequency)
         series = pd.Series(ticker_df["value"])
 
-        # Get transform chains for this indicator
+        # Get transform chains for this indicator.
+        # Series present in the processed parquet but absent from the current YAML
+        # config (e.g. series dropped between runs) are skipped — they have no
+        # declared transforms and should not appear in the feature matrix.
+        if series_code not in transform_chains:
+            logger.debug(
+                "Skipping %s — not declared in regime_universe.yaml (dropped series)",
+                series_code,
+            )
+            continue
         chains = transform_chains[series_code]
 
         # Generate descriptive feature names

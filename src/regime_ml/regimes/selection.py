@@ -64,6 +64,7 @@ def select_best_hmm_model(
     top_n: int = 10,
     weights: Dict[str, float] | None = None,
     soft_score_cfg: Dict[str, Any] | None = None,
+    churn_scores: Dict[str, float] | None = None,
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame]:
     """
     Returns:
@@ -76,14 +77,18 @@ def select_best_hmm_model(
     # no longer biased toward fewer-regime models. BIC raised to 0.15 to give
     # complexity penalty stronger influence when n_regimes differs.
     _default_weights = {
-        "macro": 0.25,
+        "macro": 0.20,
         "transitions": 0.20,
-        "stability": 0.25,
+        "stability": 0.20,
         "oos": 0.15,
-        "bic": 0.15,
+        "bic": 0.10,
+        "churn": 0.15,
     }
     w = {**_default_weights, **(weights or {})}
-    # Normalise in case caller passed unnormalised weights
+    # If churn_scores not provided, zero out churn so it doesn't affect ranking.
+    # Remaining weights are renormalised to sum to 1.0.
+    if churn_scores is None:
+        w["churn"] = 0.0
     w_total = sum(w.values())
     w = {k: v / w_total for k, v in w.items()}
 
@@ -295,11 +300,22 @@ def select_best_hmm_model(
     else:
         bic_score = 0.0
 
+    # Churn stability: 1.0 = perfectly stable labels across CV folds, 0.0 = always churning.
+    # Defaults to 0.5 (neutral) for models without CV results (non-top candidates).
+    # When churn_scores is None, w["churn"] is already 0.0 so this has no effect on ranking.
+    if churn_scores is not None:
+        churn_stab = survivors["model_id"].map(
+            lambda mid: 1.0 - float(churn_scores.get(mid, 0.5))
+        )
+    else:
+        churn_stab = pd.Series(0.5, index=survivors.index)
+
     survivors["macro_score"] = macro
     survivors["transition_score"] = trans
     survivors["stability_score"] = stab
     survivors["oos_macro_score"] = oos_macro
     survivors["bic_score"] = bic_score
+    survivors["churn_stability"] = churn_stab
 
     survivors["final_score"] = (
         w["macro"] * survivors["macro_score"]
@@ -307,6 +323,7 @@ def select_best_hmm_model(
         + w["stability"] * survivors["stability_score"]
         + w["oos"] * survivors["oos_macro_score"]
         + w["bic"] * survivors["bic_score"]
+        + w.get("churn", 0.0) * survivors["churn_stability"]
     )
 
     leaderboard = survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True)  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow

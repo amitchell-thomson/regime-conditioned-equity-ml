@@ -1,4 +1,8 @@
-train_end_date: "2021-01-01"
+# IS/OOS split: 2019-01-01 keeps COVID (2020) in OOS alongside 2022 inflation
+# and 2023+ slowdown, so all four regime types are represented out-of-sample.
+# This lets the oos_min_share filter work correctly for rare states (liquidity_crisis)
+# that have no representation when the OOS period is the benign 2021-2026 window.
+train_end_date: "2019-01-01"
 
 # Multi-seed HMM initialization.
 # fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
@@ -33,11 +37,12 @@ hmm_grid:
 # at lo - slack*(hi-lo) and hi + slack*(hi-lo). Never hardcode these in source code.
 selection:
   weights:
-    macro: 0.25
+    macro: 0.20
     transitions: 0.20
-    stability: 0.25
+    stability: 0.20
     oos: 0.15
-    bic: 0.15
+    bic: 0.10
+    churn: 0.15
   # Hard-filter thresholds — models failing these are always rejected regardless of score.
   # max_implied_duration: reject if any state's implied duration exceeds this many days.
   #   With p_stay <= 0.97, well-behaved models rarely exceed 200 days; 400 still catches
@@ -104,30 +109,33 @@ feature_selection:
     # Increase for richer groups with more indicators; decrease for simpler groups.
     # To vary candidate feature counts for HMM selection, use GroupPCATransformer.get_ordered_pc_columns()[:N].
     n_components:
-      rates: 2
+      rates: 1
       inflation: 1
-      growth: 1
-      employment: 1
-      liquidity: 2
+      real_economy: 1
+      credit: 1
+      volatility: 1
     # PC1 sign anchoring: ensures positive PC1 always means economically GOOD conditions
     # for each group. The sign is determined from IS-fitted loadings only (no look-ahead).
     # good_direction: 'low'  → lower anchor values are better (VIX, UNRATE)
     #                 'high' → higher anchor values are better (CFNAI)
     # The anchor series code must match the start of a feature name in that group.
     sign_anchors:
-      liquidity:
-        series: "VIXCLS"
-        good_direction: "low"    # Low VIX = calm = good liquidity conditions
-      employment:
-        series: "UNRATE"
-        good_direction: "low"    # Low unemployment = tight labour = good employment
-      growth:
+      rates:
+        series: "T10Y2Y"
+        good_direction: "high"   # High T10Y2Y = steep curve = accommodative = good
+      real_economy:
         series: "CFNAI"
-        good_direction: "high"   # High CFNAI = strong activity = good growth
+        good_direction: "high"   # High CFNAI = strong activity = good real economy
+      credit:
+        series: "NFCI"
+        good_direction: "low"    # Low NFCI = easy financial conditions = good
+      volatility:
+        series: "VIXCLS"
+        good_direction: "low"    # Low VIX = calm markets = good
   cross_group_correlation:
     # Warn if any cross-group PC pair exceeds this absolute Pearson correlation in IS data.
     # PCA makes within-group features orthogonal; this catches cross-group redundancy.
-    warn_threshold: 0.80
+    warn_threshold: 0.65
 
 # Transmat mixing-time diagnostic horizon (trading days).
 # evaluate_transmat_sanity() computes total-variation distance at A^n_mix.

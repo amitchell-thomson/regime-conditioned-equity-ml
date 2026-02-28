@@ -198,7 +198,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     # --- 4. Compare models
     results = compare_hmm_models(features_df, models)
 
-    # --- 5. Select best model
+    # --- 5. Model selection with optional CV-churn penalty
     # Build filter kwargs from YAML — only pass keys that select_best_hmm_model accepts
     _filter_kwarg_map = {
         "max_implied_duration": "max_implied_duration",
@@ -210,10 +210,55 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         if key in sel_filters
     }
 
-    best_model_id, leaderboard_df, rejected_df = select_best_hmm_model(
+    # 5a. Initial selection without churn to identify the strongest candidates.
+    _initial_id, leaderboard_initial, rejected_df = select_best_hmm_model(
         results,
         weights=sel_weights,
         soft_score_cfg=soft_score_cfg,
+        **filter_kwargs,
+    )
+
+    # 5b. Expanding-window CV for top-6 candidates (not all 12 grid models).
+    # Top-6 ensures at least one model from each n_regimes group gets CV computed,
+    # preventing the bias where untested models (neutral churn=0.5) score higher
+    # than tested models that were found to be churny (real churn < 0.5 churn_stability).
+    cv_results_by_model: Dict[str, Dict[str, Any]] = {}
+    churn_scores: Dict[str, float] = {}
+    if cv_cfg.get("enabled", False):
+        top_candidates = list(leaderboard_initial["model_id"].head(6))
+        logger.info(
+            "run_regime_pipeline: computing expanding-window CV for top-%d candidates: %s",
+            len(top_candidates),
+            top_candidates,
+        )
+        for cand_id in top_candidates:
+            cand_data = models[cand_id]
+            cv_result = expanding_window_cv(
+                features_df=features_df,
+                model_config={
+                    "n_regimes": cand_data["n_regimes"],
+                    "covariance_type": cand_data["covariance_type"],
+                    "p_stay": cand_data["p_stay"],
+                },
+                hmm_config=hmm_cfg,
+                cv_config=cv_cfg,
+                train_end_date=train_end_date,
+            )
+            cv_results_by_model[cand_id] = cv_result
+            churn_scores[cand_id] = float(cv_result.get("label_churn") or 0.5)
+            logger.info(
+                "run_regime_pipeline: CV %s — label_churn=%.3f, n_folds=%d",
+                cand_id,
+                churn_scores[cand_id],
+                cv_result.get("n_folds", 0),
+            )
+
+    # 5c. Final selection with churn penalty applied to top candidates.
+    best_model_id, leaderboard_df, _ = select_best_hmm_model(
+        results,
+        weights=sel_weights,
+        soft_score_cfg=soft_score_cfg,
+        churn_scores=churn_scores or None,
         **filter_kwargs,
     )
     best_row = leaderboard_df.iloc[0]
@@ -240,28 +285,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     label_results = label_regimes(X_full, smooth_proba_full, feature_names)
     state_to_label = {r["state_idx"]: r["label"] for r in label_results}
 
-    # --- 8. Optional expanding-window CV stability diagnostic
-    cv_results: Dict[str, Any] | None = None
-    if cv_cfg.get("enabled", False):
-        logger.info("run_regime_pipeline: running expanding-window CV diagnostic...")
-        cv_results = expanding_window_cv(
-            features_df=features_df,
-            model_config={
-                "n_regimes": best_model_data["n_regimes"],
-                "covariance_type": best_model_data["covariance_type"],
-                "p_stay": best_model_data["p_stay"],
-            },
-            hmm_config=hmm_cfg,
-            cv_config=cv_cfg,
-            train_end_date=train_end_date,
-        )
-        logger.info(
-            "run_regime_pipeline: CV label_churn=%.3f, n_folds=%d",
-            cv_results.get("label_churn") or float("nan"),
-            cv_results.get("n_folds", 0),
-        )
-
-    # --- 9. Episode validation
+    # --- 8. Episode validation
     episodes_path = _PROJECT_ROOT / "configs/regimes/economic_episodes.yaml"
     try:
         episode_df = validate_against_episodes(
@@ -324,7 +348,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
             "n_episodes": n_episodes,
             "n_matched": n_matched_episodes,
         },
-        "cv_diagnostics": cv_results,
+        "cv_diagnostics": cv_results_by_model.get(best_model_id),
     }
 
     # Log regime counts per label

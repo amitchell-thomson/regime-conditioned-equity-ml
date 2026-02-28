@@ -13,25 +13,27 @@ from regime_ml.regimes.selection import _soft_score
 
 class TestScoringWeights:
     def test_default_weights_sum_to_one(self):
-        """The five default scoring weights in select_best_hmm_model must sum to 1.0."""
-        # macro/oos use absolute _soft_score (not percentile rank) so the macro
-        # weight is less inflated; bic raised to 0.15 as primary n_regimes discriminator.
-        macro_w = 0.25
+        """The six default scoring weights in select_best_hmm_model must sum to 1.0."""
+        # macro/oos use absolute _soft_score (not percentile rank) so no cross-n_regime
+        # bias. churn added at 0.15 to penalise CV-unstable models; bic at 0.10 still
+        # sufficient to discriminate n_regimes when BIC differences exceed ~500.
+        macro_w = 0.20
         transitions_w = 0.20
-        stability_w = 0.25
+        stability_w = 0.20
         oos_w = 0.15
-        bic_w = 0.15
-        total = macro_w + transitions_w + stability_w + oos_w + bic_w
+        bic_w = 0.10
+        churn_w = 0.15
+        total = macro_w + transitions_w + stability_w + oos_w + bic_w + churn_w
         assert abs(total - 1.0) < 1e-9, f"Weights sum to {total}, expected 1.0"
 
     def test_bic_weight_nonzero(self):
         """BIC weight must be > 0 — it was added to penalise model complexity."""
-        bic_w = 0.15
+        bic_w = 0.10
         assert bic_w > 0.0, "BIC weight must be strictly positive."
 
     def test_bic_weight_meaningful(self):
         """BIC weight must be at least 0.10 — it needs to overcome macro score gaps."""
-        bic_w = 0.15
+        bic_w = 0.10
         assert bic_w >= 0.10, (
             f"BIC weight {bic_w} is too low to discriminate between models with "
             "different n_regimes when BIC differences are large (>1000)."

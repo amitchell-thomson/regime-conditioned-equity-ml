@@ -1,13 +1,13 @@
 # Regime archetype pool for dynamic labeling.
 #
 # Each archetype defines a signature vector over the 5 macro groups:
-#   rates, inflation, growth, liquidity, employment
+#   rates, inflation, real_economy, credit, volatility
 #
 # Sign convention (consistent with PCA sign anchoring in group_pca.py):
 #   POSITIVE = economically GOOD / elevated in the beneficial direction.
-#   e.g. liquidity: +1.0  → ample liquidity (low VIX, tight spreads)
-#        employment: +0.8 → tight labour market (low unemployment)
-#        growth: +1.5     → above-trend activity
+#   e.g. credit: +1.0       → easy financial conditions (low NFCI, tight spreads)
+#        volatility: +1.0   → calm markets (low VIX)
+#        real_economy: +1.5 → above-trend growth + tight labour market
 # This matches the anchored PCA convention where positive PC1 = good conditions.
 #
 # rates_pc1 ORIENTATION (derived from PCA loadings on IS data):
@@ -18,6 +18,21 @@
 #     2007-09 GFC (Fed cut 5.25%→0%, curve steepened): rates_pc1 = +3.8
 #     2022 hiking cycle (curve inverted -0.6%): rates_pc1 = -2.8
 #     2013 taper tantrum (10Y spiked, curve steepened): rates_pc1 = +2.5
+#
+# real_economy_pc1 ORIENTATION:
+#   PC1 dominated by CFNAI, INDPRO, PAYEMS (positive) and UNRATE, ICSA (negative).
+#   POSITIVE real_economy_pc1 = strong growth + tight labour market (expansion).
+#   NEGATIVE real_economy_pc1 = weak growth + labour market stress (recession / crisis).
+#
+# credit_pc1 ORIENTATION:
+#   PC1 dominated by NFCI (flipped: good_direction=low) and BAA10Y (flipped).
+#   POSITIVE credit_pc1 = easy financial conditions (low NFCI, tight spreads).
+#   NEGATIVE credit_pc1 = financial stress (high NFCI, wide credit spreads).
+#
+# volatility_pc1 ORIENTATION:
+#   PC1 = VIXCLS (flipped: good_direction=low).
+#   POSITIVE volatility_pc1 = calm markets (low VIX).
+#   NEGATIVE volatility_pc1 = market stress (high VIX).
 #
 # The labeling algorithm uses cosine similarity to match detected HMM states
 # to archetypes via linear assignment (no archetype assigned to two states).
@@ -33,56 +48,56 @@ archetypes:
   expansion:
     display_name: "Risk On - Expansion"
     signatures:
-      growth: 1.5       # strong activity
-      employment: 0.8   # tight labour market
-      liquidity: 1.0    # ample financial liquidity
-      inflation: -0.3   # subdued inflation
-      rates: 0.4        # accommodative/normal curve (FEDFUNDS low, curve not inverted)
+      real_economy: 1.2    # strong growth + tight labour market (CFNAI high, UNRATE low, PAYEMS rising)
+      credit: 1.0          # easy financial conditions (low NFCI, tight spreads)
+      volatility: 1.0      # calm markets (low VIX)
+      inflation: -0.3      # subdued inflation (below target)
+      rates: 0.4           # accommodative/normal curve (FEDFUNDS low, curve not inverted)
 
   stagflation:
-    display_name: "Risk On - Stagflation"
+    display_name: "Stagflation"
     signatures:
-      inflation: 1.5    # elevated inflation
-      growth: -0.9      # sluggish growth
-      rates: -0.8       # inverted yield curve (Fed hiking aggressively to fight inflation)
-      liquidity: -0.5   # tighter financial conditions
-      employment: 0.3   # labour still holding up
+      inflation: 1.5       # elevated inflation (primary signal)
+      real_economy: -0.5   # sluggish growth, but labour market still holding up
+      rates: -0.8          # inverted yield curve (Fed hiking aggressively to fight inflation)
+      credit: -0.5         # tighter financial conditions
+      volatility: -0.5     # mildly elevated volatility
 
   policy_constrained:
     display_name: "Policy-Constrained Growth"
     signatures:
-      rates: -1.2       # very inverted yield curve (aggressive tightening cycle)
-      inflation: 1.0    # above-target inflation driving tightening
-      growth: 0.3       # modest positive growth (economy still expanding)
-      liquidity: 0.3    # financial conditions elevated but not crisis (2022-24 had VIX <25)
-      employment: 0.4   # labour market still firm despite tightening
+      rates: -1.2          # very inverted yield curve (aggressive tightening cycle)
+      inflation: 1.0       # above-target inflation driving tightening
+      real_economy: 0.4    # modest positive growth + firm labour market
+      credit: 0.2          # financial conditions elevated but not crisis (2022-24: VIX <25, IG spreads contained)
+      volatility: -0.3     # mildly elevated equity volatility despite policy stress
 
   recession:
     display_name: "Risk Off - Recession"
     signatures:
-      growth: -1.8      # sharp contraction
-      employment: -0.4  # labour market softening (unemployment rising but not spiking)
-      liquidity: -1.2   # risk-off, elevated VIX and spreads
-      inflation: 0.1    # roughly neutral inflation
-      rates: -0.4       # flat/slightly inverted — rate cycle has not yet fully eased
+      real_economy: -1.2   # sharp contraction in growth + labour market deteriorating
+      credit: -1.2         # risk-off, elevated credit spreads
+      volatility: -0.8     # elevated equity volatility
+      inflation: 0.1       # roughly neutral inflation
+      rates: -0.4          # flat/slightly inverted — rate cycle has not yet fully eased
 
   recovery:
     display_name: "Recovery"
     signatures:
-      growth: 0.9       # recovering activity
-      employment: 0.4   # labour market healing
-      liquidity: 0.6    # risk appetite returning
-      inflation: -0.2   # inflation still subdued
-      rates: 0.7        # steep yield curve (Fed still at low/zero, curve normalized)
+      real_economy: 0.7    # recovering activity + labour market healing
+      credit: 0.6          # risk appetite returning, spreads tightening
+      volatility: 0.6      # calm markets, VIX normalising
+      inflation: -0.2      # inflation still subdued
+      rates: 0.7           # steep yield curve (Fed at low/zero, curve normalized post-crisis)
 
   liquidity_crisis:
     display_name: "Liquidity Crisis"
     signatures:
-      liquidity: -2.5   # extreme stress — VIX >40, credit spreads blown out (GFC: -3.4, COVID: -2)
-      employment: -1.0  # significant job losses (GFC: -5.8, COVID: -1.9)
-      growth: -0.7      # growth impaired
-      inflation: -0.3   # deflationary pressure
-      rates: 1.5        # very steep curve — emergency cuts (Fed to 0%) steepen the curve sharply
+      credit: -2.5         # extreme credit stress — NFCI >3σ, spreads blown out (GFC: BAA10Y +600bps, COVID: +400bps)
+      volatility: -2.5     # extreme equity volatility — VIX >40 (GFC peak: 80, COVID peak: 65)
+      real_economy: -1.0   # growth impaired + significant job losses
+      inflation: -0.3      # deflationary pressure
+      rates: 1.5           # very steep curve — emergency rate cuts (Fed to 0%) sharply steepen the curve
 
   slowdown:
     display_name: "Late-Cycle Slowdown"
@@ -90,11 +105,13 @@ archetypes:
     # Fits periods where the prior tightening cycle killed inflation but growth is
     # stalling without a full recession: commodity bust 2015-16, trade-war 2019,
     # rapid disinflation 2023.
-    # Empirical state means that inspired this archetype (4-regime IS fit):
+    # Empirical state means that inspired this archetype (4-regime IS fit, old groups):
     #   rates=-0.67  inflation=-0.94  growth=+0.04  liquidity=-0.51  employment=+0.25
+    # Translated to new groups:
+    #   rates=-0.67  inflation=-0.94  real_economy≈+0.15  credit≈-0.35  volatility≈-0.50
     signatures:
-      inflation: -1.0   # strong disinflation — the dominant signal
-      rates: -0.7       # inverted curve (residual from prior tightening cycle)
-      growth: 0.1       # near-zero but not contracting
-      liquidity: -0.5   # moderate financial stress (VIX mildly elevated, some spread widening)
-      employment: 0.2   # labour market still firm — unemployment not spiking
+      inflation: -1.0      # strong disinflation — the dominant signal
+      rates: -0.7          # inverted curve (residual from prior tightening cycle)
+      real_economy: 0.2    # near-zero growth but not contracting; labour market still firm
+      credit: -0.3         # moderate spread widening (mild financial caution)
+      volatility: -0.5     # VIX mildly elevated (15-25 range, not crisis-level)

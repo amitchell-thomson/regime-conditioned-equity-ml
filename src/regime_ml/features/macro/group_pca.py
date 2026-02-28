@@ -191,9 +191,6 @@ class GroupPCATransformer:
         if not self._pcas:
             raise RuntimeError("GroupPCATransformer must be fit() before transform().")
 
-        if not self._pcas:
-            raise RuntimeError("GroupPCATransformer must be fit() before transform().")
-
         # Build a buffer for all PC columns, then reorder by explained variance
         buffer: dict[str, np.ndarray] = {}
 

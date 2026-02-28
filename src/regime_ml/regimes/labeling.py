@@ -26,7 +26,7 @@ from regime_ml.data.macro import build_featuregroup_map
 
 logger = logging.getLogger(__name__)
 
-_GROUPS = ("rates", "inflation", "growth", "liquidity", "employment")
+_GROUPS = ("rates", "inflation", "real_economy", "credit", "volatility")
 _DEFAULT_ARCHETYPES_PATH = (
     Path(__file__).parent.parent.parent.parent
     / "configs/regimes/regime_archetypes.yaml"
