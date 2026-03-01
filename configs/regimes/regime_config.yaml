@@ -8,7 +8,7 @@ train_end_date: "2019-01-01"
 # fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
 # model that passes the degeneracy filter. All values must come from this config.
 hmm:
-  n_init: 15              # Number of seeds to try (range(0, n_init))
+  n_init: 10              # Number of seeds to try (range(0, n_init))
   min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
 
 # Grid search over HMM hyperparameters evaluated by compare_hmm_models().
@@ -29,20 +29,22 @@ hmm_grid:
 
 # Soft scoring weights and soft-score parameters for select_best_hmm_model().
 # Must sum to 1.0. Adjust here — never in source code.
-# macro/oos now use absolute _soft_score (not percentile rank) so they are no
-# longer biased toward fewer-regime models. bic raised to 0.15 so BIC is the
-# primary discriminator when n_regimes differs (3-regime BIC vs 4-regime BIC
-# differences of >1000 should dominate model selection).
+# macro/oos use absolute _soft_score (not percentile rank) so they are no longer
+# biased toward fewer-regime models. bic raised to 0.15 so BIC is the primary
+# discriminator when n_regimes differs (3-regime BIC vs 4-regime BIC differences
+# of >1000 should dominate model selection).
+# CV churn is now a hard filter (cross_validation.hard_filter), not a soft score.
+# The 0.15 weight previously allocated to churn is redistributed:
+#   macro +0.05 (IS coherence), oos +0.05 (OOS robustness), bic +0.05 (complexity).
 # _soft_score() assigns 1.0 at 'optimal', 0.5 at 'lo'/'hi', decays to 0.0
 # at lo - slack*(hi-lo) and hi + slack*(hi-lo). Never hardcode these in source code.
 selection:
   weights:
-    macro: 0.20
+    macro: 0.25
     transitions: 0.20
     stability: 0.20
-    oos: 0.15
-    bic: 0.10
-    churn: 0.15
+    oos: 0.20
+    bic: 0.15
   # Hard-filter thresholds — models failing these are always rejected regardless of score.
   # max_implied_duration: reject if any state's implied duration exceeds this many days.
   #   With p_stay <= 0.97, well-behaved models rarely exceed 200 days; 400 still catches
@@ -85,14 +87,22 @@ selection:
       slack: 0.5
 
 # Expanding-window cross-validation stability diagnostic.
-# Disabled by default (expensive — each fold refits all grid candidates).
-# Enable for final model validation runs only.
+# Runs for all hard-filter-passing models before final selection.
+# hard_filter.max_churn:  hard-reject any model whose label_churn exceeds this.
+#   This is a disqualifying threshold, not a graded penalty — a model that relabels
+#   >20% of its history when the IS window shifts by one year cannot reliably condition
+#   downstream Phase 3 models. Use max_churn_warning (below) for a softer notification.
+# hard_filter.min_cv_folds: hard-reject if fewer folds complete (insufficient data for
+#   a stable estimate). Prevents models from slipping through with only 1-2 fold evals.
 cross_validation:
   enabled: true
+  hard_filter:
+    max_churn: 0.65        # reject model if label_churn > this (hard rejection, not soft)
+    min_cv_folds: 4        # reject model if fewer than this many folds complete
   min_train_years: 5
   fold_step_months: 12
   oos_window_months: 12
-  max_churn_warning: 0.20   # flag if >20% of Viterbi dates change label across folds
+  max_churn_warning: 0.20   # log WARNING if label_churn > this (diagnostic only)
 
 # Output file paths (relative to project root).
 outputs:

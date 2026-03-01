@@ -196,7 +196,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     # --- 4. Compare models
     results = compare_hmm_models(features_df, models)
 
-    # --- 5. Model selection with optional CV-churn penalty
+    # --- 5. Model selection with optional CV hard filter
     # Build filter kwargs from YAML — only pass keys that select_best_hmm_model accepts
     _filter_kwarg_map = {
         "max_implied_duration": "max_implied_duration",
@@ -208,28 +208,30 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         if key in sel_filters
     }
 
-    # 5a. Initial selection without churn to identify the strongest candidates.
-    _initial_id, leaderboard_initial, rejected_df = select_best_hmm_model(
+    # 5a. Initial selection without churn_rejected_ids to identify structural survivors.
+    # This gives us the pool of models that passed degeneracy, dead-regime, and duration
+    # filters — we then run CV on all of them (not just the top-N ranked ones).
+    _initial_id, leaderboard_initial, _initial_rejected = select_best_hmm_model(
         results,
         weights=sel_weights,
         soft_score_cfg=soft_score_cfg,
         **filter_kwargs,
     )
 
-    # 5b. Expanding-window CV for top-6 candidates (not all 12 grid models).
-    # Top-6 ensures at least one model from each n_regimes group gets CV computed,
-    # preventing the bias where untested models (neutral churn=0.5) score higher
-    # than tested models that were found to be churny (real churn < 0.5 churn_stability).
+    # 5b. Expanding-window CV for ALL hard-filter-passing candidates.
+    # Running CV on the full survivor pool (not just the top-6) closes the selection gap
+    # where the eventual winner could avoid being measured and win by getting the neutral
+    # fallback score. Every candidate that reaches this stage gets its stability measured.
     cv_results_by_model: Dict[str, Dict[str, Any]] = {}
-    churn_scores: Dict[str, float] = {}
+    churn_rejected_ids: set[str] = set()
     if cv_cfg.get("enabled", False):
-        top_candidates = list(leaderboard_initial["model_id"].head(6))
+        all_surviving_candidates = list(leaderboard_initial["model_id"])
         logger.info(
-            "run_regime_pipeline: computing expanding-window CV for top-%d candidates: %s",
-            len(top_candidates),
-            top_candidates,
+            "run_regime_pipeline: computing expanding-window CV for %d survivors: %s",
+            len(all_surviving_candidates),
+            all_surviving_candidates,
         )
-        for cand_id in top_candidates:
+        for cand_id in all_surviving_candidates:
             cand_data = models[cand_id]
             cv_result = expanding_window_cv(
                 features_df=features_df,
@@ -243,26 +245,58 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
                 train_end_date=train_end_date,
             )
             cv_results_by_model[cand_id] = cv_result
-            churn_scores[cand_id] = float(cv_result.get("label_churn") or 0.5)
+            label_churn = cv_result.get("label_churn")
             logger.info(
-                "run_regime_pipeline: CV %s — label_churn=%.3f, n_folds=%d",
+                "run_regime_pipeline: CV %s — label_churn=%s, n_folds=%d, hard_reject=%s",
                 cand_id,
-                churn_scores[cand_id],
+                f"{label_churn:.3f}" if label_churn is not None else "n/a",
                 cv_result.get("n_folds", 0),
+                cv_result.get("churn_hard_reject", False),
             )
+            if cv_result.get("churn_hard_reject", False):
+                churn_rejected_ids.add(cand_id)
+                logger.warning(
+                    "run_regime_pipeline: %s hard-rejected by CV churn filter.", cand_id
+                )
 
-    # 5c. Final selection with churn penalty applied to top candidates.
-    best_model_id, leaderboard_df, _ = select_best_hmm_model(
+    # 5c. Final selection with churn_rejected_ids applied as a hard filter.
+    # Models that exceeded the CV churn threshold are rejected outright — high label
+    # churn is a disqualifying defect for a conditioning signal, not a graded penalty.
+    best_model_id, leaderboard_df, rejected_df = select_best_hmm_model(
         results,
         weights=sel_weights,
         soft_score_cfg=soft_score_cfg,
-        churn_scores=churn_scores or None,
+        churn_rejected_ids=churn_rejected_ids or None,
         **filter_kwargs,
     )
+
     best_row = leaderboard_df.iloc[0]
     best_model_data = models[best_model_id]
     best_detector = best_model_data["model"]
     best_scaler = best_model_data["scaler"]
+
+    # 5d. Phase B: ensure the winning model always has CV diagnostics.
+    # If CV is enabled but the winner somehow escaped the pool in 5b (should not happen
+    # with the full-survivor expansion above, but guards against future changes), run
+    # CV for the winner now. This guarantees run_metadata.cv_diagnostics is never null.
+    if cv_cfg.get("enabled", False) and best_model_id not in cv_results_by_model:
+        logger.info(
+            "run_regime_pipeline: running Phase B CV for winner %s "
+            "(was not in pre-selection CV pool — running now as stability certificate).",
+            best_model_id,
+        )
+        winner_cv = expanding_window_cv(
+            features_df=features_df,
+            model_config={
+                "n_regimes": best_model_data["n_regimes"],
+                "covariance_type": best_model_data["covariance_type"],
+                "p_stay": best_model_data["p_stay"],
+            },
+            hmm_config=hmm_cfg,
+            cv_config=cv_cfg,
+            train_end_date=train_end_date,
+        )
+        cv_results_by_model[best_model_id] = winner_cv
     logger.info(
         "run_regime_pipeline: best model = %s (n_regimes=%d, p_stay=%.2f, score=%.4f)",
         best_model_id,

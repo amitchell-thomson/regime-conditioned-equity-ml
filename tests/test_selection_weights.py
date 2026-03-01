@@ -13,30 +13,44 @@ from regime_ml.regimes.selection import _soft_score
 
 class TestScoringWeights:
     def test_default_weights_sum_to_one(self):
-        """The six default scoring weights in select_best_hmm_model must sum to 1.0."""
-        # macro/oos use absolute _soft_score (not percentile rank) so no cross-n_regime
-        # bias. churn added at 0.15 to penalise CV-unstable models; bic at 0.10 still
-        # sufficient to discriminate n_regimes when BIC differences exceed ~500.
-        macro_w = 0.20
+        """The five default scoring weights in select_best_hmm_model must sum to 1.0.
+
+        CV churn is now a hard filter (churn_rejected_ids), not a soft score.
+        Its former 0.15 weight is redistributed: macro +0.05, oos +0.05, bic +0.05.
+        """
+        macro_w = 0.25
         transitions_w = 0.20
         stability_w = 0.20
-        oos_w = 0.15
-        bic_w = 0.10
-        churn_w = 0.15
-        total = macro_w + transitions_w + stability_w + oos_w + bic_w + churn_w
+        oos_w = 0.20
+        bic_w = 0.15
+        total = macro_w + transitions_w + stability_w + oos_w + bic_w
         assert abs(total - 1.0) < 1e-9, f"Weights sum to {total}, expected 1.0"
 
     def test_bic_weight_nonzero(self):
         """BIC weight must be > 0 — it was added to penalise model complexity."""
-        bic_w = 0.10
+        bic_w = 0.15
         assert bic_w > 0.0, "BIC weight must be strictly positive."
 
     def test_bic_weight_meaningful(self):
         """BIC weight must be at least 0.10 — it needs to overcome macro score gaps."""
-        bic_w = 0.10
+        bic_w = 0.15
         assert bic_w >= 0.10, (
             f"BIC weight {bic_w} is too low to discriminate between models with "
             "different n_regimes when BIC differences are large (>1000)."
+        )
+
+    def test_no_churn_weight(self):
+        """CV churn must not appear in scoring weights — it is now a hard filter."""
+        from regime_ml.regimes.selection import select_best_hmm_model
+        import inspect
+
+        sig = inspect.signature(select_best_hmm_model)
+        # churn_scores param must not exist; churn_rejected_ids must exist
+        assert "churn_scores" not in sig.parameters, (
+            "churn_scores parameter should have been replaced by churn_rejected_ids"
+        )
+        assert "churn_rejected_ids" in sig.parameters, (
+            "churn_rejected_ids parameter must be present for hard churn filtering"
         )
 
 

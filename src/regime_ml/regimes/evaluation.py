@@ -611,24 +611,34 @@ def expanding_window_cv(
     State alignment across folds uses Euclidean distance between regime means
     (compatible with all covariance types).
 
-    DIAGNOSTIC ONLY — does not affect model selection. Results are stored in
-    run_metadata.json for post-run inspection.
+    Used as both a pre-selection hard filter and a post-selection stability
+    certificate for the winning model. Results are stored in run_metadata.json.
 
     Args:
         features_df:     Full feature DataFrame with DatetimeIndex (PC columns).
         model_config:    Dict with keys: n_regimes, covariance_type, p_stay.
         hmm_config:      Dict with keys: n_init, min_regime_share (from regime_config).
-        cv_config:       Dict with keys: min_train_years, fold_step_months,
-                         oos_window_months, max_churn_warning.
+        cv_config:       Dict with keys: hard_filter, min_train_years,
+                         fold_step_months, oos_window_months, max_churn_warning.
         train_end_date:  IS boundary — folds do not extend beyond this date.
 
     Returns:
         Dict with keys:
-          label_churn     float — fraction of overlapping dates with label change
-          metric_cv_std   float — std of OOS ANOVA-R² across folds
-          n_folds         int   — number of complete folds evaluated
-          fold_scores     list[float] — per-fold OOS ANOVA-R²
-          churn_warning   bool  — True if label_churn > max_churn_warning
+          label_churn          float — mean fraction of overlapping OOS dates that
+                                        changed label between consecutive folds
+          metric_cv_std        float — std of OOS ANOVA-R² across folds
+          n_folds              int   — number of complete folds evaluated
+          fold_scores          list[float] — per-fold OOS ANOVA-R²
+          churn_warning        bool  — True if label_churn > max_churn_warning
+          churn_hard_reject    bool  — True if label_churn > hard_filter.max_churn
+                                        or n_folds < hard_filter.min_cv_folds
+          max_pairwise_churn   float — worst consecutive fold-pair churn fraction
+          n_nontrivial_perms   int   — folds where state alignment needed reordering
+          fold_score_slope     float — linear slope of OOS ANOVA-R² vs fold index
+                                        (positive = coherence improving with more IS data)
+          transmat_diag_std    float — std of mean(diag(transmat)) across folds
+                                        (stability of self-transition probabilities)
+          per_state_share_std  dict  — {state_idx: std of OOS share across folds}
     """
     # Lazy import to avoid circular dependency at module level
     from regime_ml.regimes.hmm import fit_best_of_n_seeds  # noqa: PLC0415
@@ -637,6 +647,13 @@ def expanding_window_cv(
     fold_step_months = int(cv_config.get("fold_step_months", 12))
     oos_window_months = int(cv_config.get("oos_window_months", 12))
     max_churn_warning = float(cv_config.get("max_churn_warning", 0.20))
+
+    # Hard filter thresholds — used to compute churn_hard_reject in return dict.
+    # Defaults to 1.0 (never reject) / 0 (always pass) when not configured,
+    # so the function degrades gracefully if hard_filter is absent from the YAML.
+    hard_filter_cfg = cv_config.get("hard_filter", {})
+    churn_hard_threshold = float(hard_filter_cfg.get("max_churn", 1.0))
+    min_cv_folds_required = int(hard_filter_cfg.get("min_cv_folds", 0))
 
     n_regimes = int(model_config["n_regimes"])
     covariance_type = str(model_config.get("covariance_type", "diag"))
@@ -656,21 +673,34 @@ def expanding_window_cv(
         fold_ends.append(current)
         current = current + pd.DateOffset(months=fold_step_months)
 
+    _empty_phase_b: Dict[str, Any] = {
+        "churn_hard_reject": True,  # reject: no folds means no evidence of stability
+        "max_pairwise_churn": None,
+        "n_nontrivial_perms": 0,
+        "fold_score_slope": None,
+        "transmat_diag_std": None,
+        "per_state_share_std": {},
+    }
+
     if len(fold_ends) < 2:
         logger.warning(
             "expanding_window_cv: fewer than 2 folds available — "
             "increase data history or reduce min_train_years."
         )
         return {
-            "label_churn": np.nan,
-            "metric_cv_std": np.nan,
+            "label_churn": None,
+            "metric_cv_std": None,
             "n_folds": 0,
             "fold_scores": [],
             "churn_warning": False,
+            **_empty_phase_b,
         }
 
     fold_scores: list[float] = []
     fold_labels: list[np.ndarray] = []  # Viterbi labels per fold on the OOS window
+    fold_diag_means: list[float] = []   # mean(diag(transmat)) per fold
+    fold_state_shares: list[Dict[int, float]] = []  # {state: OOS share} per fold
+    nontrivial_perm_count: int = 0
     ref_detector = None
 
     for fold_end in fold_ends:
@@ -711,6 +741,7 @@ def expanding_window_cv(
         if ref_detector is None:
             ref_detector = detector
             perm = np.arange(n_regimes)
+            # First fold is always identity — no comparison available yet
         else:
             means_ref = ref_detector.model.means_
             cost = np.array(
@@ -724,12 +755,32 @@ def expanding_window_cv(
             )
             _, col_ind = linear_sum_assignment(cost)
             perm = col_ind
+            # Count folds where state ordering genuinely differs from the reference.
+            # Frequent reorderings indicate the HMM is finding different local minima
+            # as the IS window grows — a sign of label instability beyond churn.
+            if not np.array_equal(perm, np.arange(n_regimes)):
+                nontrivial_perm_count += 1
 
         raw_labels = detector.predict(X_oos)
         aligned_labels = perm[raw_labels]  # remap to reference ordering
         fold_labels.append(aligned_labels)
 
-        # OOS macro coherence
+        # Track self-transition probability stability across folds.
+        # High std(mean(diag)) means p_stay is not consistently recovered from data.
+        diag = np.diag(detector.model.transmat_)
+        fold_diag_means.append(float(np.mean(diag)))
+
+        # Track per-state OOS share distribution across folds.
+        # A state whose share swings widely as IS grows is not a stable regime signal.
+        n_oos = len(aligned_labels)
+        if n_oos > 0:
+            shares = {
+                int(k): float(np.sum(aligned_labels == k)) / n_oos
+                for k in range(n_regimes)
+            }
+            fold_state_shares.append(shares)
+
+        # OOS macro coherence — causal filter_proba only (no smooth_proba)
         filt_oos = detector.filter_proba(X_oos)
         coh = evaluate_macro_coherence(
             X_oos,
@@ -742,15 +793,16 @@ def expanding_window_cv(
     n_folds = len(fold_scores)
     if n_folds == 0:
         return {
-            "label_churn": np.nan,
-            "metric_cv_std": np.nan,
+            "label_churn": None,
+            "metric_cv_std": None,
             "n_folds": 0,
             "fold_scores": [],
             "churn_warning": False,
+            **_empty_phase_b,
         }
 
-    # Label churn: fraction of overlapping OOS dates where the label changed
-    # Compare each consecutive fold pair on the common date range
+    # Label churn: fraction of overlapping OOS dates where the label changed.
+    # Compare each consecutive fold pair on the common date range.
     churn_fracs: list[float] = []
     for i in range(1, len(fold_labels)):
         a, b = fold_labels[i - 1], fold_labels[i]
@@ -772,14 +824,71 @@ def expanding_window_cv(
             max_churn_warning,
         )
 
+    # --- Phase B diagnostics (richer stability characterisation) ---
+
+    # Worst consecutive fold-pair churn — catches localised instability windows
+    # that are masked by the mean. A model with mean churn=0.15 but max=0.50
+    # has a specific window where assignments collapse.
+    max_pairwise_churn = float(max(churn_fracs)) if churn_fracs else np.nan
+
+    # Linear slope of OOS ANOVA-R² vs fold index.
+    # Positive = coherence improving as more IS data is added (desirable).
+    # Flat or negative = diminishing returns or structural instability.
+    if len(valid_scores) >= 2:
+        valid_idx_and_scores = [
+            (i, s) for i, s in enumerate(fold_scores) if np.isfinite(s)
+        ]
+        xs = np.array([pair[0] for pair in valid_idx_and_scores], float)
+        ys = np.array([pair[1] for pair in valid_idx_and_scores], float)
+        fold_score_slope = float(np.polyfit(xs, ys, 1)[0])
+    else:
+        fold_score_slope = np.nan
+
+    # Std of mean(diag(transmat)) across folds — measures how consistently the
+    # self-transition probabilities are recovered as the IS window grows.
+    transmat_diag_std = (
+        float(np.std(fold_diag_means)) if len(fold_diag_means) > 1 else np.nan
+    )
+
+    # Per-state OOS share std — flags states whose relative frequency is unstable.
+    per_state_share_std: Dict[int, float | None] = {}
+    if fold_state_shares:
+        for k in range(n_regimes):
+            state_shares = [s.get(k, 0.0) for s in fold_state_shares]
+            per_state_share_std[k] = (
+                float(np.std(state_shares)) if len(state_shares) > 1 else None
+            )
+
+    # Hard-reject if label_churn exceeds the configured threshold or if too few
+    # folds completed for a reliable estimate.
+    churn_hard_reject = bool(
+        (np.isfinite(label_churn) and label_churn > churn_hard_threshold)
+        or n_folds < min_cv_folds_required
+    )
+
+    def _fmt(x: float) -> float | None:
+        return round(x, 4) if np.isfinite(x) else None
+
     return {
-        "label_churn": round(label_churn, 4) if np.isfinite(label_churn) else None,
-        "metric_cv_std": (
-            round(metric_cv_std, 4) if np.isfinite(metric_cv_std) else None
-        ),
+        "label_churn": _fmt(label_churn),
+        "metric_cv_std": _fmt(metric_cv_std),
         "n_folds": n_folds,
-        "fold_scores": [round(s, 4) if np.isfinite(s) else None for s in fold_scores],
+        "fold_scores": [_fmt(s) for s in fold_scores],
         "churn_warning": churn_warning,
+        # Phase B diagnostics
+        "churn_hard_reject": churn_hard_reject,
+        "max_pairwise_churn": _fmt(max_pairwise_churn),
+        "n_nontrivial_perms": nontrivial_perm_count,
+        "fold_score_slope": (
+            round(fold_score_slope, 6) if np.isfinite(fold_score_slope) else None
+        ),
+        "transmat_diag_std": (
+            round(transmat_diag_std, 6) if np.isfinite(transmat_diag_std) else None
+        ),
+        "per_state_share_std": {
+            str(k): _fmt(v) if v is not None else None
+            for k, v in per_state_share_std.items()
+        },
     }
 
 
