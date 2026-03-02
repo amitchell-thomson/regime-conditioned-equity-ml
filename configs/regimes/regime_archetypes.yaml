@@ -40,13 +40,33 @@
 # Thresholds control when a label is assigned vs flagged as unclassified.
 # Tune here — never in source code.
 
+# The five macro groups used by the labeling algorithm. Must match the group names
+# defined in regime_config.yaml (feature_selection.group_pca.n_components) and the
+# PCA column prefixes produced by GroupPCATransformer (e.g. "rates_pc1").
+# If this list is updated here, also update regime_config.yaml and GroupPCATransformer.
+groups:
+  - rates
+  - inflation
+  - real_economy
+  - credit
+  - volatility
+
 label_config:
   min_confidence: 0.18   # min cosine similarity for a named label
-  min_margin: 0.06       # min (best_score - runner_up_score) to confirm assignment
+  # Margin below which a matched state is flagged as margin_warning=True in label results.
+  # Thin margins indicate two archetypes are nearly equally valid — the label is still
+  # assigned but downstream conditioning on that state should be treated with caution.
+  # Use soft probabilities (filter_proba) when margin_warning is True.
+  margin_warning_threshold: 0.08
+  # Fraction of episode days that must fall in the expected-archetype state to count as
+  # a match in validate_against_episodes(). Threshold-based matching is more robust than
+  # dominant-state matching for long, multi-phase episodes (e.g. a 19-month episode can
+  # reasonably have 45% expected state without the dominant state being the expected one).
+  episode_match_threshold: 0.40
 
 archetypes:
   expansion:
-    display_name: "Risk On - Expansion"
+    display_name: "Expansion"
     signatures:
       real_economy: 1.2    # strong growth + tight labour market (CFNAI high, UNRATE low, PAYEMS rising)
       credit: 1.0          # easy financial conditions (low NFCI, tight spreads)
@@ -56,30 +76,42 @@ archetypes:
 
   stagflation:
     display_name: "Stagflation"
+    # Fed behind the curve: inflation is the primary stress, growth has already collapsed.
+    # Key differentiator from Policy Tightening: growth is sharply negative (not just flat),
+    # credit conditions are severely stressed, and the curve is only mildly inverted because
+    # the Fed is late to respond (not ahead of the curve like in 2022-24).
     signatures:
       inflation: 1.5       # elevated inflation (primary signal)
-      real_economy: -0.5   # sluggish growth, but labour market still holding up
-      rates: -0.8          # inverted yield curve (Fed hiking aggressively to fight inflation)
-      credit: -0.5         # tighter financial conditions
+      real_economy: -1.0   # genuine growth collapse + labour market deteriorating (not just sluggish)
+      rates: -0.5          # mildly inverted — Fed is behind the curve, not aggressively ahead
+      credit: -0.8         # genuine financial stress (risk-off, spreads widening meaningfully)
       volatility: -0.5     # mildly elevated volatility
 
   policy_constrained:
-    display_name: "Policy-Constrained Growth"
+    display_name: "Policy Tightening"
+    # Fed ahead of the curve: aggressively hiking to kill inflation while growth is still positive.
+    # Key differentiator from Stagflation: growth is still positive (real_economy > 0),
+    # curve is very inverted (Fed is deliberately restrictive), credit conditions are merely
+    # tight — not crisis-level. Canonical period: 2022-24 hiking cycle.
     signatures:
-      rates: -1.2          # very inverted yield curve (aggressive tightening cycle)
+      rates: -1.5          # very inverted yield curve (aggressive tightening, curve deliberately inverted)
       inflation: 1.0       # above-target inflation driving tightening
-      real_economy: 0.4    # modest positive growth + firm labour market
-      credit: 0.2          # financial conditions elevated but not crisis (2022-24: VIX <25, IG spreads contained)
+      real_economy: 0.5    # positive growth + firm labour market — key differentiator from stagflation
+      credit: 0.2          # financial conditions tight but not crisis (2022-24: VIX <25, IG spreads contained)
       volatility: -0.3     # mildly elevated equity volatility despite policy stress
 
   recession:
-    display_name: "Risk Off - Recession"
+    display_name: "Recession"
+    # Outright contraction: growth and labour market deteriorating sharply, credit spreads blowing out.
+    # rates is mildly positive (0.3) because recessions trigger emergency Fed cuts → curve steepens quickly.
+    # This is distinct from slowdown (where growth is merely stagnant and labour intact) and
+    # liquidity_crisis (where credit/volatility are extreme and emergency cuts are much larger).
     signatures:
-      real_economy: -1.2   # sharp contraction in growth + labour market deteriorating
-      credit: -1.2         # risk-off, elevated credit spreads
-      volatility: -0.8     # elevated equity volatility
-      inflation: 0.1       # roughly neutral inflation
-      rates: -0.4          # flat/slightly inverted — rate cycle has not yet fully eased
+      real_economy: -1.5   # sharp contraction in growth + labour market collapsing
+      credit: -1.5         # risk-off, meaningful credit spread widening
+      volatility: -1.2     # elevated equity volatility (VIX 25-40 range)
+      inflation: 0.0       # neutral inflation (disinflation beginning as demand collapses)
+      rates: 0.3           # mildly steep — early emergency Fed cuts steepen the curve
 
   recovery:
     display_name: "Recovery"
@@ -100,18 +132,132 @@ archetypes:
       rates: 1.5           # very steep curve — emergency rate cuts (Fed to 0%) sharply steepen the curve
 
   slowdown:
-    display_name: "Late-Cycle Slowdown"
-    # Disinflation + stagnant growth + labour still intact + mildly inverted curve.
-    # Fits periods where the prior tightening cycle killed inflation but growth is
-    # stalling without a full recession: commodity bust 2015-16, trade-war 2019,
-    # rapid disinflation 2023.
-    # Empirical state means that inspired this archetype (4-regime IS fit, old groups):
-    #   rates=-0.67  inflation=-0.94  growth=+0.04  liquidity=-0.51  employment=+0.25
-    # Translated to new groups:
-    #   rates=-0.67  inflation=-0.94  real_economy≈+0.15  credit≈-0.35  volatility≈-0.50
+    display_name: "Late-Cycle Disinflation"
+    # Strong disinflation is the dominant signal. Growth is stagnant but labour market intact —
+    # this is a mid-cycle soft-patch, not an outright recession. The yield curve reflects
+    # residual inversion from a prior tightening cycle that is fading.
+    # Canonical periods: commodity bust 2015-16, trade-war 2019, rapid disinflation 2023.
     signatures:
       inflation: -1.0      # strong disinflation — the dominant signal
-      rates: -0.7          # inverted curve (residual from prior tightening cycle)
+      rates: -0.7          # mildly inverted curve (residual from prior tightening; fading)
       real_economy: 0.2    # near-zero growth but not contracting; labour market still firm
       credit: -0.3         # moderate spread widening (mild financial caution)
       volatility: -0.5     # VIX mildly elevated (15-25 range, not crisis-level)
+
+# ---------------------------------------------------------------------------
+# Archetype taxonomy: coarsened pools for smaller n_regime models
+# ---------------------------------------------------------------------------
+#
+# When the winning HMM has fewer states (3 or 4), the canonical 7-archetype pool
+# is too fine-grained to be matched 1-for-1. The pools below define explicit
+# merged archetypes so that labeling and episode validation are fair across model
+# sizes. Signatures are weighted averages of the constituent canonical archetypes.
+#
+# Hierarchy (canonical → coarse group):
+#   Risk-on:          expansion, recovery
+#   Contraction:      slowdown, recession
+#   Inflation/policy: stagflation, policy_constrained
+#   Crisis:           liquidity_crisis (stands alone at all granularities)
+#
+# Pool routing in label_regimes():
+#   K <= 3 → n3 pool (risk_on, contraction, crisis)
+#   K == 4 → n4 pool (risk_on, contraction, inflation_policy, crisis)
+#   K >= 5 → canonical pool (all 7 archetypes, linear assignment picks best K)
+
+taxonomy:
+  # Maps canonical archetype keys to coarsened keys for each pool level.
+  # Used by validate_against_episodes() to translate episode expectations
+  # (written in canonical space) to the pool used by the current model.
+  canonical_to_coarse:
+    n3:
+      expansion: risk_on
+      recovery: risk_on
+      slowdown: contraction
+      recession: contraction
+      stagflation: contraction
+      policy_constrained: contraction
+      liquidity_crisis: crisis
+    n4:
+      expansion: risk_on
+      recovery: risk_on
+      slowdown: contraction
+      recession: contraction
+      stagflation: inflation_policy
+      policy_constrained: inflation_policy
+      liquidity_crisis: crisis
+
+pools:
+  # 3-state pool: broad risk-on / contraction / crisis taxonomy.
+  # stagflation and policy_constrained fold into contraction because at 3-state
+  # granularity the model cannot distinguish inflation stress from growth weakness.
+  # Contraction blends all four sub-types; inflation signals partially cancel out
+  # (stagflation/policy_constrained have high inflation; slowdown/recession have low),
+  # giving a near-neutral inflation signal overall.
+  n3:
+    risk_on:
+      display_name: "Risk-On"
+      canonical_members: [expansion, recovery]
+      signatures:
+        real_economy: 1.0    # blend of expansion (1.2) + recovery (0.7)
+        credit: 0.8          # blend of expansion (1.0) + recovery (0.6)
+        volatility: 0.8      # blend of expansion (1.0) + recovery (0.6)
+        inflation: -0.3      # blend of expansion (-0.3) + recovery (-0.2)
+        rates: 0.5           # blend of expansion (0.4) + recovery (0.7)
+    contraction:
+      display_name: "Contraction"
+      canonical_members: [slowdown, recession, stagflation, policy_constrained]
+      signatures:
+        real_economy: -0.5   # blend: slowdown(0.2) + recession(-1.5) + stagflation(-1.0) + policy(0.5) ≈ -0.5
+        credit: -0.6         # blend: slowdown(-0.3) + recession(-1.5) + stagflation(-0.8) + policy(0.2) ≈ -0.6
+        volatility: -0.6     # blend: slowdown(-0.5) + recession(-1.2) + stagflation(-0.5) + policy(-0.3) ≈ -0.6
+        inflation: 0.0       # inflation signals cancel: slowdown(-1.0) + recession(0.0) + stagflation(1.5) + policy(1.0) ≈ 0.0
+        rates: -0.6          # blend: slowdown(-0.7) + recession(0.3) + stagflation(-0.5) + policy(-1.5) ≈ -0.6
+    crisis:
+      display_name: "Liquidity Crisis"
+      canonical_members: [liquidity_crisis]
+      signatures:
+        credit: -2.5
+        volatility: -2.5
+        real_economy: -1.0
+        inflation: -0.3
+        rates: 1.5
+
+  # 4-state pool: splits inflation/policy stress out of contraction.
+  # stagflation and policy_constrained merge into inflation_policy.
+  n4:
+    risk_on:
+      display_name: "Risk-On"
+      canonical_members: [expansion, recovery]
+      signatures:
+        real_economy: 1.0
+        credit: 0.8
+        volatility: 0.8
+        inflation: -0.3
+        rates: 0.5
+    contraction:
+      display_name: "Contraction"
+      canonical_members: [slowdown, recession]
+      signatures:
+        real_economy: -0.7   # blend of slowdown (0.2) + recession (-1.5)
+        credit: -0.9         # blend of slowdown (-0.3) + recession (-1.5)
+        volatility: -0.9     # blend of slowdown (-0.5) + recession (-1.2)
+        inflation: -0.5      # blend of slowdown (-1.0) + recession (0.0)
+        rates: -0.2          # blend of slowdown (-0.7) + recession (0.3) — partial offset
+    inflation_policy:
+      display_name: "Inflation / Policy Stress"
+      canonical_members: [stagflation, policy_constrained]
+      signatures:
+        inflation: 1.2       # blend of stagflation (1.5) + policy_constrained (1.0)
+        rates: -1.0          # blend of stagflation (-0.5) + policy_constrained (-1.5)
+        real_economy: -0.2   # blend of stagflation (-1.0) + policy_constrained (0.5)
+        credit: -0.3         # blend of stagflation (-0.8) + policy_constrained (0.2)
+        volatility: -0.4     # blend of stagflation (-0.5) + policy_constrained (-0.3)
+    crisis:
+      display_name: "Liquidity Crisis"
+      canonical_members: [liquidity_crisis]
+      signatures:
+        credit: -2.5
+        volatility: -2.5
+        real_economy: -1.0
+        inflation: -0.3
+        rates: 1.5

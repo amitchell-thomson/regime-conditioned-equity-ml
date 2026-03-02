@@ -829,44 +829,115 @@ def expanding_window_cv(
 
 
 _DEFAULT_EPISODES_PATH = Path(__file__).parent.parent.parent.parent / "configs/regimes/economic_episodes.yaml"
+_DEFAULT_ARCHETYPES_PATH = Path(__file__).parent.parent.parent.parent / "configs/regimes/regime_archetypes.yaml"
+
+
+def _build_canonical_to_coarse(archetypes_raw: dict, pool_name: str) -> dict[str, str]:
+    """Return canonical_archetype_key → coarse_pool_key mapping for a given pool.
+
+    For the canonical pool the mapping is identity (empty dict — no translation).
+    """
+    if pool_name == "canonical":
+        return {}
+    taxonomy = archetypes_raw.get("taxonomy", {})
+    mapping: dict[str, str] = taxonomy.get("canonical_to_coarse", {}).get(pool_name, {})
+    return mapping
+
+
+def _detect_pool_name(label_results: list[dict]) -> str:
+    """Determine which archetype pool was used from the 'pool' field in label_results.
+
+    Falls back to 'canonical' if the field is absent (backward-compatible with
+    label_results produced before the pool field was added).
+    """
+    pools_found = {r.get("pool") for r in label_results if r.get("pool") is not None}
+    if not pools_found:
+        return "canonical"
+    if len(pools_found) > 1:
+        logger.warning(
+            "validate_against_episodes: mixed pool values in label_results: %s — "
+            "defaulting to canonical.",
+            pools_found,
+        )
+        return "canonical"
+    return pools_found.pop()
 
 
 def validate_against_episodes(
     regimes: pd.Series,
     label_results: list[dict],
     episodes_path: str | Path | None = None,
+    archetypes_path: str | Path | None = None,
 ) -> pd.DataFrame:
     """Validate regime labels against known economic episodes.
 
     ANALYSIS ONLY — never call in fitting or trading-signal paths.
 
-    For each episode, counts what fraction of days fell in:
-      (a) the state whose archetype_key matches expected_archetype (expected_pct)
-      (b) the overall dominant state (dominant_pct)
+    Episodes are written in canonical archetype space (7 archetypes).  When the
+    model used a coarsened pool (n3 or n4), canonical expected_archetype keys are
+    translated to coarsened pool keys via the taxonomy.canonical_to_coarse mapping
+    in regime_archetypes.yaml before the state lookup.
+
+    Match criterion: expected_pct >= episode_match_threshold (default 0.40).
+    This is more robust than requiring the dominant state to match for long,
+    multi-phase episodes.
+
+    match_status values:
+        "matched"       — expected_pct >= threshold
+        "failed"        — expected state found but expected_pct < threshold
+        "not_in_model"  — expected archetype (after coarse mapping) not assigned
+                          to any state; excluded from the applicable match count
+        "no_data"       — episode window has no regime data
 
     Args:
-        regimes:       pd.Series with DatetimeIndex; integer state indices
-                       (e.g. from model.predict()).
-        label_results: List of dicts from label_regimes() — must include
-                       "state_idx", "archetype_key", "label".
-        episodes_path: Optional override for configs/regimes/economic_episodes.yaml.
+        regimes:         pd.Series with DatetimeIndex; integer state indices.
+        label_results:   List of dicts from label_regimes() — must include
+                         "state_idx", "archetype_key", "label".
+                         The "pool" field (added by label_regimes) is used to
+                         determine the canonical→coarse mapping; falls back to
+                         "canonical" if absent.
+        episodes_path:   Optional override for configs/regimes/economic_episodes.yaml.
+        archetypes_path: Optional override for configs/regimes/regime_archetypes.yaml.
+                         Used to load taxonomy.canonical_to_coarse for pool translation.
 
     Returns:
         DataFrame with one row per episode and columns:
           episode, start, end, expected_archetype,
-          dominant_state, dominant_label, archetype_match,
+          dominant_state, dominant_label,
+          match_status, archetype_match,
           expected_pct, dominant_pct, n_days
     """
     ep_path = Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
     if not ep_path.exists():
         raise FileNotFoundError(f"economic_episodes.yaml not found at {ep_path}.")
 
+    arch_path = Path(archetypes_path) if archetypes_path is not None else _DEFAULT_ARCHETYPES_PATH
+
     with open(ep_path, "r") as fh:
-        raw = yaml.safe_load(fh)
-    episodes = raw.get("episodes", [])
+        raw_ep = yaml.safe_load(fh)
+    episodes = raw_ep.get("episodes", [])
+
+    # Load canonical→coarse mapping from archetypes YAML (tolerates missing file).
+    canonical_to_coarse: dict[str, str] = {}
+    pool_name = _detect_pool_name(label_results)
+    if arch_path.exists():
+        with open(arch_path, "r") as fh:
+            raw_arch = yaml.safe_load(fh)
+        canonical_to_coarse = _build_canonical_to_coarse(raw_arch, pool_name)
+        match_threshold = float(
+            raw_arch.get("label_config", {}).get("episode_match_threshold", 0.40)
+        )
+    else:
+        match_threshold = 0.40
+        logger.warning(
+            "validate_against_episodes: archetypes YAML not found at %s — "
+            "using default match_threshold=%.2f, no canonical_to_coarse mapping.",
+            arch_path,
+            match_threshold,
+        )
 
     # Build lookup: archetype_key → state_idx
-    key_to_state: dict[str | None, int] = {
+    key_to_state: dict[str, int] = {
         r["archetype_key"]: r["state_idx"] for r in label_results if r.get("archetype_key") is not None
     }
     state_to_label: dict[int, str] = {r["state_idx"]: r["label"] for r in label_results}
@@ -876,7 +947,7 @@ def validate_against_episodes(
         name = str(ep["name"])
         start = pd.Timestamp(ep["start"])
         end = pd.Timestamp(ep["end"])
-        expected_key = str(ep["expected_archetype"])
+        expected_key_canonical = str(ep["expected_archetype"])
 
         ep_regimes = regimes[(regimes.index >= start) & (regimes.index <= end)]
         n_days = len(ep_regimes)
@@ -891,9 +962,10 @@ def validate_against_episodes(
                     "episode": name,
                     "start": start,
                     "end": end,
-                    "expected_archetype": expected_key,
+                    "expected_archetype": expected_key_canonical,
                     "dominant_state": None,
                     "dominant_label": None,
+                    "match_status": "no_data",
                     "archetype_match": False,
                     "expected_pct": np.nan,
                     "dominant_pct": np.nan,
@@ -908,24 +980,33 @@ def validate_against_episodes(
         dominant_pct = float(counts.iloc[0] / n_days)
         dominant_label = state_to_label.get(dominant_state, f"State {dominant_state}")
 
-        # Expected state
-        expected_state = key_to_state.get(expected_key)
+        # Translate canonical archetype key to the pool's key (no-op for canonical pool).
+        expected_key_pool = canonical_to_coarse.get(expected_key_canonical, expected_key_canonical)
+
+        # Expected state lookup
+        expected_state = key_to_state.get(expected_key_pool)
         if expected_state is not None:
             expected_count = int((ep_regimes == expected_state).sum())
             expected_pct = float(expected_count / n_days)
+            if expected_pct >= match_threshold:
+                match_status = "matched"
+            else:
+                match_status = "failed"
         else:
             expected_pct = np.nan
+            match_status = "not_in_model"
 
-        archetype_match = dominant_state == expected_state if expected_state is not None else False
+        archetype_match = match_status == "matched"
 
         rows.append(
             {
                 "episode": name,
                 "start": start,
                 "end": end,
-                "expected_archetype": expected_key,
+                "expected_archetype": expected_key_canonical,
                 "dominant_state": dominant_state,
                 "dominant_label": dominant_label,
+                "match_status": match_status,
                 "archetype_match": archetype_match,
                 "expected_pct": (round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan),
                 "dominant_pct": round(dominant_pct, 3),
@@ -936,9 +1017,16 @@ def validate_against_episodes(
     df = pd.DataFrame(rows)
     if not df.empty:
         n_matched = int(df["archetype_match"].sum())
+        n_not_in_model = int((df["match_status"] == "not_in_model").sum())
+        n_applicable = len(df) - n_not_in_model - int((df["match_status"] == "no_data").sum())
         logger.info(
-            "validate_against_episodes: %d/%d episodes matched expected archetype.",
+            "validate_against_episodes: %d/%d applicable episodes matched "
+            "(pool=%s, threshold=%.2f); %d not_in_model, %d no_data.",
             n_matched,
-            len(df),
+            n_applicable,
+            pool_name,
+            match_threshold,
+            n_not_in_model,
+            int((df["match_status"] == "no_data").sum()),
         )
     return df

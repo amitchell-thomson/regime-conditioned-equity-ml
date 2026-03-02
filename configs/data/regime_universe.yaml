@@ -130,7 +130,7 @@ regime_universe:
     # ============================
     cfnai:
       id: CFNAI
-      use_alfred: false # Composite index; heavily revised in first 1-2 years after release
+      use_alfred: false # Heavily revised in first 1-2 years after release, however only have alfred from ~2010, so the possibility of revision lookahead bias is a voluntary concession
       category: real_economy
       frequency: monthly
       name: "Chicago Fed National Activity Index"

@@ -7,11 +7,20 @@
 # ANALYSIS ONLY — this file is never read in the fitting path or trading logic.
 # expected_archetype must match a key in regime_archetypes.yaml.
 #
-# Active archetype keys in the current 4-state model:
+# Active archetype keys in the current 5-state model:
 #   expansion           — broad-based expansion
+#   recovery            — post-crisis recovery: steep curve, healing labour, subdued inflation
 #   policy_constrained  — Fed tightening cycle, inverted curve, elevated inflation
 #   slowdown            — late-cycle disinflation: falling inflation + stagnant growth + intact labour
 #   liquidity_crisis    — extreme financial stress: employment collapse + emergency cuts
+#
+# Unused canonical archetypes (7 total, 5-state model selects 5 via linear assignment):
+#   recession           — no dedicated recession state in current 5-state fit
+#   stagflation         — no dedicated stagflation state in current 5-state fit
+#
+# Episodes expecting unused archetypes (e.g. recession) will report match_status="not_in_model"
+# and are excluded from the applicable match count. Use the pipeline diagnostics to review
+# whether those periods are correctly captured under a nearby archetype (e.g. slowdown).
 
 episodes:
   - name: "Dot-com Bust"
