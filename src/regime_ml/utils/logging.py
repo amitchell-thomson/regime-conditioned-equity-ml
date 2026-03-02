@@ -39,9 +39,7 @@ def configure_pipeline_logging(
 
     handler = logging.FileHandler(log_path, encoding="utf-8")
     handler.setLevel(level)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
 
     pkg_logger = logging.getLogger("regime_ml")
     pkg_logger.addHandler(handler)

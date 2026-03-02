@@ -53,15 +53,11 @@ def validate_data(
         report["status"] = "FAIL"
 
     # Check for staleness indicators
-    has_staleness = all(
-        col in df.columns for col in ["is_new_data", "days_since_update", "native_freq"]
-    )
+    has_staleness = all(col in df.columns for col in ["is_new_data", "days_since_update", "native_freq"])
     report["statistics"]["has_staleness_indicators"] = has_staleness
 
     if not has_staleness:
-        report["warnings"].append(
-            "Staleness indicators not found (is_new_data, days_since_update, native_freq)"
-        )
+        report["warnings"].append("Staleness indicators not found (is_new_data, days_since_update, native_freq)")
 
     # ========================================
     # 2. DATA TYPE VALIDATION
@@ -70,16 +66,12 @@ def validate_data(
 
     # Check date is datetime
     if "date" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["date"]):
-        report["issues"].append(
-            "'date' column is %s, should be datetime64[ns]" % df["date"].dtype
-        )
+        report["issues"].append("'date' column is %s, should be datetime64[ns]" % df["date"].dtype)
         report["status"] = "FAIL"
 
     # Check value is numeric
     if "value" in df.columns and not pd.api.types.is_numeric_dtype(df["value"]):
-        report["issues"].append(
-            "'value' column is %s, should be numeric" % df["value"].dtype
-        )
+        report["issues"].append("'value' column is %s, should be numeric" % df["value"].dtype)
         report["status"] = "FAIL"
 
     # ========================================
@@ -94,9 +86,7 @@ def validate_data(
     # Critical nulls in identifier columns (series_code, date must never be null)
     id_nulls = null_counts[["series_code", "date"]].sum()
     if id_nulls > 0:
-        report["issues"].append(
-            "Found %d null values in identifier columns (series_code, date)" % id_nulls
-        )
+        report["issues"].append("Found %d null values in identifier columns (series_code, date)" % id_nulls)
         report["status"] = "FAIL"
 
     # Value nulls: critical only when staleness tracking is absent.
@@ -105,13 +95,10 @@ def validate_data(
     if value_nulls > 0:
         if has_staleness:
             report["warnings"].append(
-                "Found %d null values in 'value' column — expected from staleness NaN-out"
-                % value_nulls
+                "Found %d null values in 'value' column — expected from staleness NaN-out" % value_nulls
             )
         else:
-            report["issues"].append(
-                "Found %d null values in 'value' column" % value_nulls
-            )
+            report["issues"].append("Found %d null values in 'value' column" % value_nulls)
             report["status"] = "FAIL"
 
     # Series count
@@ -151,18 +138,14 @@ def validate_data(
         today = pd.Timestamp.today()
         future_dates = df[df["date"] > today]
         if len(future_dates) > 0:
-            report["warnings"].append(
-                "Found %d observations with future dates" % len(future_dates)
-            )
+            report["warnings"].append("Found %d observations with future dates" % len(future_dates))
 
     # Check for duplicates
     duplicates = df.duplicated(subset=["series_code", "date"]).sum()
     report["statistics"]["duplicate_date_series_pairs"] = duplicates
 
     if duplicates > 0:
-        report["issues"].append(
-            "Found %d duplicate (series_code, date) pairs" % duplicates
-        )
+        report["issues"].append("Found %d duplicate (series_code, date) pairs" % duplicates)
         report["status"] = "FAIL"
 
     # Check sorting
@@ -224,9 +207,7 @@ def validate_data(
         if has_staleness and "is_new_data" in series_df.columns:
             new_data_count = series_df["is_new_data"].sum()
             series_report["new_data_points"] = int(new_data_count)
-            series_report["forward_filled_points"] = len(series_df) - int(
-                new_data_count
-            )
+            series_report["forward_filled_points"] = len(series_df) - int(new_data_count)
 
             if "native_frequency" in series_df.columns:
                 series_report["native_frequency"] = series_df["native_frequency"].iloc[
@@ -235,9 +216,7 @@ def validate_data(
 
         # Check for constant values (zero variance)
         if series_df["value"].std() == 0:
-            report["warnings"].append(
-                "%s: Zero variance (constant values)" % series_code
-            )
+            report["warnings"].append("%s: Zero variance (constant values)" % series_code)
 
         # Check for extreme outliers (>5 std devs)
         mean = series_df["value"].mean()
@@ -247,9 +226,7 @@ def validate_data(
             outlier_count = outliers.sum()
             if outlier_count > 0:
                 series_report["potential_outliers"] = int(outlier_count)
-                report["warnings"].append(
-                    "%s: %d potential outliers (>5σ)" % (series_code, outlier_count)
-                )
+                report["warnings"].append("%s: %d potential outliers (>5σ)" % (series_code, outlier_count))
 
         report["series_details"][series_code] = series_report
 
@@ -264,9 +241,7 @@ def validate_data(
         # against the full master calendar will always produce spurious "missing dates".
         data_start = df["date"].min()
         data_end = df["date"].max()
-        scoped_calendar = expected_calendar[
-            (expected_calendar >= data_start) & (expected_calendar <= data_end)
-        ]
+        scoped_calendar = expected_calendar[(expected_calendar >= data_start) & (expected_calendar <= data_end)]
         expected_dates = set(scoped_calendar)
         actual_dates = set(df["date"].unique())
 
@@ -285,9 +260,7 @@ def validate_data(
             report["statistics"]["missing_calendar_dates"] = len(missing_dates)
 
         if extra_dates:
-            report["warnings"].append(
-                "Found %d dates not in expected calendar" % len(extra_dates)
-            )
+            report["warnings"].append("Found %d dates not in expected calendar" % len(extra_dates))
             report["statistics"]["extra_calendar_dates"] = len(extra_dates)
 
     # ========================================
@@ -300,17 +273,13 @@ def validate_data(
         if "is_new_data" in df.columns:
             new_data_total = df["is_new_data"].sum()
             report["statistics"]["total_new_data_points"] = int(new_data_total)
-            report["statistics"]["total_forward_filled_points"] = len(df) - int(
-                new_data_total
-            )
+            report["statistics"]["total_forward_filled_points"] = len(df) - int(new_data_total)
 
         # Check days_since_update is non-negative
         if "days_since_update" in df.columns:
             negative_staleness = (df["days_since_update"] < 0).sum()
             if negative_staleness > 0:
-                report["issues"].append(
-                    "Found %d negative days_since_update values" % negative_staleness
-                )
+                report["issues"].append("Found %d negative days_since_update values" % negative_staleness)
                 report["status"] = "FAIL"
 
             max_staleness = df.groupby("series_code")["days_since_update"].max()
@@ -360,9 +329,7 @@ def print_validation_report(report: Dict[str, Any]) -> None:
 
     if "date_range" in stats:
         dr = stats["date_range"]
-        logger.info(
-            "  Date range: %s to %s (%d days)", dr["start"], dr["end"], dr["days"]
-        )
+        logger.info("  Date range: %s to %s (%d days)", dr["start"], dr["end"], dr["days"])
 
     if stats.get("has_staleness_indicators"):
         new_pts = stats.get("total_new_data_points", 0)

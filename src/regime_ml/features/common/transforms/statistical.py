@@ -105,13 +105,10 @@ class Winsorize(BaseTransform):
     def _validate_params(self) -> None:
         if "sigma" not in self.params:
             raise ValueError(
-                "Winsorize requires a 'sigma' parameter (symmetric clip bound). "
-                "Set this in regime_universe.yaml."
+                "Winsorize requires a 'sigma' parameter (symmetric clip bound). " "Set this in regime_universe.yaml."
             )
         if self.params["sigma"] <= 0:
-            raise ValueError(
-                f"Winsorize sigma must be positive, got {self.params['sigma']}."
-            )
+            raise ValueError(f"Winsorize sigma must be positive, got {self.params['sigma']}.")
 
     def _compute(self, series: pd.Series) -> pd.Series:
         sigma = self.params["sigma"]

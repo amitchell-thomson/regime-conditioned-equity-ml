@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "regime-conditioned-equity-ml"
 version = "0.1.0"
@@ -5,44 +9,40 @@ description = "A research-grade equity trading engine than detects market regime
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fredapi>=0.5.2",
-    "hmmlearn>=0.3.3",
-    "ipykernel>=7.1.0",
-    "massive>=2.0.3",
-    "matplotlib>=3.10.8",
-    "nbformat>=5.10.4",
-    "numpy>=2.4.1",
-    "pandas>=2.3.3",
-    "plotly>=6.5.2",
-    "pyarrow>=23.0.0",
-    "python-dotenv>=1.2.1",
-    "pyyaml>=6.0.3",
-    "rich>=14.3.2",
-    "scikit-learn>=1.8.0",
-    "seaborn>=0.13.2",
-    "statsmodels>=0.14.6",
-    "tqdm>=4.67.1",
-    "wrds>=3.1.6",
-    "yfinance>=1.0",
-    "scipy>=1.14"
+  "duckdb>=1.4.4",
+  "fredapi>=0.5.2",
+  "hmmlearn>=0.3.3",
+  "ipykernel>=7.1.0",
+  "massive>=2.0.3",
+  "matplotlib>=3.10.8",
+  "nbformat>=5.10.4",
+  "numpy>=2.4.1",
+  "pandas>=2.3.3",
+  "plotly>=6.5.2",
+  "pyarrow>=23.0.0",
+  "python-dotenv>=1.2.1",
+  "pyyaml>=6.0.3",
+  "rich>=14.3.2",
+  "scikit-learn>=1.8.0",
+  "scipy>=1.14",
+  "seaborn>=0.13.2",
+  "statsmodels>=0.14.6",
+  "tqdm>=4.67.1",
+  "wrds>=3.1.6",
+  "yfinance>=1.0",
 ]
-
-[dependency-groups]
-dev = [
-    "black>=25.12.0",
-    "pytest>=9.0.2",
-    "ruff>=0.14.13",
-]
-
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [project.scripts]
 regime-ml = "regime_ml.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.2",
+  "ruff>=0.14.13",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -51,3 +51,10 @@ addopts = "-v"
 log_cli = true
 log_cli_level = "WARNING"
 log_level = "DEBUG"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

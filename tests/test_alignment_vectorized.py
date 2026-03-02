@@ -102,9 +102,7 @@ class TestDaysSinceUpdateVectorized:
         is_new = rng.random(n) > 0.8
         is_new[0] = True
         df = _make_series_df(
-            dates=pd.date_range("2020-01-01", periods=n, freq="B")
-            .strftime("%Y-%m-%d")
-            .tolist(),
+            dates=pd.date_range("2020-01-01", periods=n, freq="B").strftime("%Y-%m-%d").tolist(),
             values=rng.standard_normal(n).tolist(),
             is_new=is_new.tolist(),
         )

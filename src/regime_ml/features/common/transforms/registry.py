@@ -45,9 +45,7 @@ class TransformRegistry:
 
         if name_lower not in cls._transforms:
             available = ", ".join(cls._transforms.keys())
-            raise ValueError(
-                f"Unknown transform: '{name}'. Available transforms: {available}"
-            )
+            raise ValueError(f"Unknown transform: '{name}'. Available transforms: {available}")
 
         return cls._transforms[name_lower]
 

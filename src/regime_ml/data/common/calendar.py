@@ -3,9 +3,7 @@
 import pandas as pd
 
 
-def create_master_calendar(
-    start_date: str, end_date: str | None = None
-) -> pd.DatetimeIndex:
+def create_master_calendar(start_date: str, end_date: str | None = None) -> pd.DatetimeIndex:
     """
     Create a master calendar of business days between start and end dates.
 

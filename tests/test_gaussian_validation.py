@@ -104,9 +104,7 @@ def test_high_kurtosis_for_heavy_tailed_data():
     X = rng.standard_t(df=3, size=(300, 1))
     labels = np.zeros(300, dtype=int)
     result = validate_gaussian_assumption(X, labels)
-    assert result[0]["f0"]["kurtosis"] > 2.0, (
-        "Expected excess kurtosis > 2 for t(3) distribution."
-    )
+    assert result[0]["f0"]["kurtosis"] > 2.0, "Expected excess kurtosis > 2 for t(3) distribution."
 
 
 # ---------------------------------------------------------------------------

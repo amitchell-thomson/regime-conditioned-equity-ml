@@ -24,9 +24,7 @@ class TransformParser:
     def __init__(self):
         self.registry = TransformRegistry
 
-    def parse_yaml_config(
-        self, yaml_config: Dict[str, Any]
-    ) -> Dict[str, List[ChainedTransform]]:
+    def parse_yaml_config(self, yaml_config: Dict[str, Any]) -> Dict[str, List[ChainedTransform]]:
         """
         Parse entire YAML configuration and return dictionary of ticker -> transform chains.
 
@@ -45,9 +43,7 @@ class TransformParser:
             transform_specs = ticker_config.get("transforms", [])
 
             # Parse each transform chain specification
-            transform_chains = [
-                self.parse_chain(chain_spec) for chain_spec in transform_specs
-            ]
+            transform_chains = [self.parse_chain(chain_spec) for chain_spec in transform_specs]
 
             result[ticker_id] = transform_chains
 
@@ -96,9 +92,7 @@ class TransformParser:
         elif isinstance(step, dict):
             # Transform with parameters: {z_score: {window: 63}}
             if len(step) != 1:
-                raise ValueError(
-                    f"Transform step must have exactly one key, got: {step}"
-                )
+                raise ValueError(f"Transform step must have exactly one key, got: {step}")
 
             transform_name = list(step.keys())[0]
             params = step[transform_name]
@@ -113,9 +107,7 @@ class TransformParser:
         else:
             raise ValueError(f"Invalid transform step type: {type(step)}")
 
-    def get_feature_names(
-        self, ticker_name: str, transform_chains: List[ChainedTransform]
-    ) -> List[str]:
+    def get_feature_names(self, ticker_name: str, transform_chains: List[ChainedTransform]) -> List[str]:
         """
         Generate feature names for a ticker's transform chains.
 

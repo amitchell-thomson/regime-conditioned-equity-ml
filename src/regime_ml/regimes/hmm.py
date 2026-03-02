@@ -145,9 +145,7 @@ def initialise_emissions(
         covs_array = np.stack([np.diagonal(cov) for cov in covariances], axis=0)
         return means, covs_array, scaler
     else:
-        raise ValueError(
-            f"Unsupported covariance type: {covariance_type}. Use 'full' or 'diag'."
-        )
+        raise ValueError(f"Unsupported covariance type: {covariance_type}. Use 'full' or 'diag'.")
 
 
 def initialise_transitions(n_regimes: int, p_stay: float) -> np.ndarray:
@@ -168,9 +166,9 @@ def initialise_transitions(n_regimes: int, p_stay: float) -> np.ndarray:
     if not 0 <= p_stay <= 1:
         raise ValueError(f"p_stay must be between 0 and 1, got {p_stay}")
 
-    transmat = np.eye(n_regimes) * p_stay + (
-        np.ones((n_regimes, n_regimes)) - np.eye(n_regimes)
-    ) * (1 - p_stay) / (n_regimes - 1)
+    transmat = np.eye(n_regimes) * p_stay + (np.ones((n_regimes, n_regimes)) - np.eye(n_regimes)) * (1 - p_stay) / (
+        n_regimes - 1
+    )
     return transmat
 
 
@@ -216,9 +214,7 @@ def _kl_gaussian(
     if sign_q <= 0 or sign_p <= 0:
         return np.inf
     diff = mu_p - mu_q
-    kl = 0.5 * (
-        logdet_q - logdet_p + np.trace(Cq_inv @ Cp) + float(diff @ Cq_inv @ diff) - d
-    )
+    kl = 0.5 * (logdet_q - logdet_p + np.trace(Cq_inv @ Cp) + float(diff @ Cq_inv @ diff) - d)
     return float(max(kl, 0.0))
 
 
@@ -251,10 +247,7 @@ def align_states(
             f"n_regimes mismatch: reference has {reference_detector.n_regimes}, "
             f"candidate has {candidate_detector.n_regimes}."
         )
-    if (
-        reference_detector.covariance_type != "full"
-        or candidate_detector.covariance_type != "full"
-    ):
+    if reference_detector.covariance_type != "full" or candidate_detector.covariance_type != "full":
         raise NotImplementedError(
             "align_states() only supports covariance_type='full'. "
             f"Got reference={reference_detector.covariance_type!r}, "
@@ -268,13 +261,7 @@ def align_states(
     cov_cand = candidate_detector.model.covars_  # (K, d, d)
 
     cost = np.array(
-        [
-            [
-                _kl_gaussian(mu_cand[i], cov_cand[i], mu_ref[j], cov_ref[j])
-                for j in range(K)
-            ]
-            for i in range(K)
-        ]
+        [[_kl_gaussian(mu_cand[i], cov_cand[i], mu_ref[j], cov_ref[j]) for j in range(K)] for i in range(K)]
     )
     _, col_ind = linear_sum_assignment(cost)
     return col_ind  # perm[candidate_state] = reference_state
@@ -305,9 +292,7 @@ def permute_detector(
 
     K = detector.n_regimes
     if perm.shape != (K,) or set(perm.tolist()) != set(range(K)):
-        raise ValueError(
-            f"perm must be a valid permutation of {{0,...,{K - 1}}}, got {perm}."
-        )
+        raise ValueError(f"perm must be a valid permutation of {{0,...,{K - 1}}}, got {perm}.")
 
     new_det = copy.deepcopy(detector)
     new_det.model.means_ = detector.model.means_[perm]
@@ -419,16 +404,9 @@ class HMMRegimeDetector(BaseRegimeDetector):
         # hmmlearn 0.3.x sets converged=True when iter==n_iter (hit limit) OR when
         # LL delta < tol. We only want to warn when the LL delta criterion was NOT met,
         # i.e. the model stopped because it ran out of iterations, not because it converged.
-        ll_converged = (
-            len(monitor.history) >= 2
-            and monitor.history[-1] - monitor.history[-2] < monitor.tol
-        )
+        ll_converged = len(monitor.history) >= 2 and monitor.history[-1] - monitor.history[-2] < monitor.tol
         if not ll_converged:
-            delta = (
-                monitor.history[-1] - monitor.history[-2]
-                if len(monitor.history) >= 2
-                else float("nan")
-            )
+            delta = monitor.history[-1] - monitor.history[-2] if len(monitor.history) >= 2 else float("nan")
             logger.warning(
                 "HMM did not converge after %d iterations "
                 "(final LL delta: %.6f, tol=%.6f). "
@@ -492,9 +470,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
             out = a_max + np.log(np.sum(np.exp(a - a_max), axis=axis, keepdims=True))
             return np.squeeze(out, axis=axis)
 
-        def _log_gaussian_pdf_full(
-            X: np.ndarray, means: np.ndarray, covars: np.ndarray
-        ) -> np.ndarray:
+        def _log_gaussian_pdf_full(X: np.ndarray, means: np.ndarray, covars: np.ndarray) -> np.ndarray:
             """
             Computes the log emission likelihood log p(x(t | z_t = k))
 
@@ -521,9 +497,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
 
             return loglik
 
-        def _log_gaussian_pdf_diag(
-            X: np.ndarray, means: np.ndarray, covars: np.ndarray
-        ) -> np.ndarray:
+        def _log_gaussian_pdf_diag(X: np.ndarray, means: np.ndarray, covars: np.ndarray) -> np.ndarray:
             """
             X: (T,d), means: (K,d), covars: (K,d) variances
             returns (T,K)
@@ -546,9 +520,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
 
         # Pull HMM parameters from fitted model
         A = np.asarray(self.model.transmat_, dtype=float)  # (K,K) - transition matrix
-        pi = np.asarray(
-            self.model.startprob_, dtype=float
-        )  # (K,)  - initial state probabilities
+        pi = np.asarray(self.model.startprob_, dtype=float)  # (K,)  - initial state probabilities
         means = np.asarray(self.model.means_, dtype=float)  # (K,d) - emission means
 
         n_regimes, d = means.shape
@@ -575,9 +547,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
             )
 
         if not np.isfinite(logB).all():
-            raise ValueError(
-                "Non-finite emission log-likelihoods (logB). Check covars / scaling."
-            )
+            raise ValueError("Non-finite emission log-likelihoods (logB). Check covars / scaling.")
 
         T, n_regimes = logB.shape
 
@@ -629,9 +599,7 @@ class HMMRegimeDetector(BaseRegimeDetector):
         if not self.is_fitted:
             raise ValueError("Model not fitted. Call fit() first.")
         if X.ndim != 2:
-            raise ValueError(
-                f"X must be 2D array (n_samples, n_features), got shape {X.shape}"
-            )
+            raise ValueError(f"X must be 2D array (n_samples, n_features), got shape {X.shape}")
         return self.model.score(X)
 
     def _n_params(self) -> int:
@@ -967,8 +935,7 @@ def fit_best_of_n_seeds(
 
     if not candidates:
         raise RuntimeError(
-            f"fit_best_of_n_seeds: all {n_init} seeds failed with exceptions. "
-            "Check input data and configuration."
+            f"fit_best_of_n_seeds: all {n_init} seeds failed with exceptions. " "Check input data and configuration."
         )
 
     passing = [c for c in candidates if c["passed_filter"]]

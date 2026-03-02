@@ -93,9 +93,7 @@ def test_output_schema_required_columns(cfnai_alfred):
     """Output must have exactly: series_code, date, value, series_name, category."""
     result = build_realtime_series(cfnai_alfred)
     required = {"series_code", "date", "value", "series_name", "category"}
-    assert required.issubset(set(result.columns)), (
-        f"Missing columns: {required - set(result.columns)}"
-    )
+    assert required.issubset(set(result.columns)), f"Missing columns: {required - set(result.columns)}"
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +111,7 @@ def test_output_date_column_contains_publication_dates(cfnai_alfred):
         pd.Timestamp("2020-03-30"),
         pd.Timestamp("2020-04-28"),
     }
-    assert output_dates == expected_pub_dates, (
-        f"Expected pub dates {expected_pub_dates}, got {output_dates}"
-    )
+    assert output_dates == expected_pub_dates, f"Expected pub dates {expected_pub_dates}, got {output_dates}"
 
 
 def test_output_date_not_obs_dates(cfnai_alfred):
@@ -133,10 +129,7 @@ def test_output_date_not_obs_dates(cfnai_alfred):
 def test_value_at_first_publication(cfnai_alfred):
     """On 2020-02-28 only Jan initial (0.10) is known."""
     result = build_realtime_series(cfnai_alfred)
-    row = result[
-        (result["series_code"] == "CFNAI")
-        & (result["date"] == pd.Timestamp("2020-02-28"))
-    ]
+    row = result[(result["series_code"] == "CFNAI") & (result["date"] == pd.Timestamp("2020-02-28"))]
     assert len(row) == 1
     assert row.iloc[0]["value"] == pytest.approx(0.10)
 
@@ -145,10 +138,7 @@ def test_value_at_second_publication(cfnai_alfred):
     """On 2020-03-30: Jan revision (0.12, obs=Jan) AND Feb initial (-0.05, obs=Feb).
     Feb is a more recent obs_date so it wins → value=-0.05."""
     result = build_realtime_series(cfnai_alfred)
-    row = result[
-        (result["series_code"] == "CFNAI")
-        & (result["date"] == pd.Timestamp("2020-03-30"))
-    ]
+    row = result[(result["series_code"] == "CFNAI") & (result["date"] == pd.Timestamp("2020-03-30"))]
     assert len(row) == 1
     assert row.iloc[0]["value"] == pytest.approx(-0.05)
 
@@ -156,10 +146,7 @@ def test_value_at_second_publication(cfnai_alfred):
 def test_value_at_third_publication(cfnai_alfred):
     """On 2020-04-28: Feb revision (-0.04) is the latest available."""
     result = build_realtime_series(cfnai_alfred)
-    row = result[
-        (result["series_code"] == "CFNAI")
-        & (result["date"] == pd.Timestamp("2020-04-28"))
-    ]
+    row = result[(result["series_code"] == "CFNAI") & (result["date"] == pd.Timestamp("2020-04-28"))]
     assert len(row) == 1
     assert row.iloc[0]["value"] == pytest.approx(-0.04)
 
@@ -177,16 +164,13 @@ def test_no_future_values_at_any_output_row(cfnai_alfred):
     for _, row in result.iterrows():
         pub_date = row["date"]
         code = row["series_code"]
-        causal = cfnai_alfred[
-            (cfnai_alfred["series_code"] == code)
-            & (cfnai_alfred["realtime_start"] <= pub_date)
-        ]
+        causal = cfnai_alfred[(cfnai_alfred["series_code"] == code) & (cfnai_alfred["realtime_start"] <= pub_date)]
         assert not causal.empty, f"No causal data for {code} at {pub_date}"
         # row value must be one of the causally available values
         causal_values = set(causal["value"].tolist())
-        assert row["value"] in causal_values, (
-            f"{code} at {pub_date}: value={row['value']} not in causal set {causal_values}"
-        )
+        assert (
+            row["value"] in causal_values
+        ), f"{code} at {pub_date}: value={row['value']} not in causal set {causal_values}"
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +182,7 @@ def test_one_row_per_pub_date_per_series(cfnai_alfred):
     """No duplicate (series_code, date) pairs in output."""
     result = build_realtime_series(cfnai_alfred)
     dup_mask = result.duplicated(subset=["series_code", "date"])
-    assert not dup_mask.any(), (
-        f"Duplicate (series_code, date) rows found:\n{result[dup_mask]}"
-    )
+    assert not dup_mask.any(), f"Duplicate (series_code, date) rows found:\n{result[dup_mask]}"
 
 
 # ---------------------------------------------------------------------------
@@ -272,12 +254,8 @@ def test_yaml_use_alfred_defaults_to_false():
     import yaml
     from pathlib import Path
 
-    config_path = (
-        Path(__file__).parent.parent / "configs" / "data" / "regime_universe.yaml"
-    )
+    config_path = Path(__file__).parent.parent / "configs" / "data" / "regime_universe.yaml"
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     alfred_cfg = cfg.get("regime_universe", {}).get("alfred", {})
-    assert alfred_cfg.get("use_alfred") is False, (
-        "alfred.use_alfred should default to false in YAML"
-    )
+    assert alfred_cfg.get("use_alfred") is False, "alfred.use_alfred should default to false in YAML"

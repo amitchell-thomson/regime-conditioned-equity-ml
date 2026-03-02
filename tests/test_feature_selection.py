@@ -7,9 +7,7 @@ import pytest
 from regime_ml.features.macro.group_pca import GroupPCATransformer
 
 
-def _make_features(
-    n_rows: int = 200, seed: int = 42
-) -> tuple[pd.DataFrame, dict[str, str]]:
+def _make_features(n_rows: int = 200, seed: int = 42) -> tuple[pd.DataFrame, dict[str, str]]:
     """Build a small synthetic feature DataFrame with known group assignments."""
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2010-01-04", periods=n_rows)
@@ -140,10 +138,7 @@ def test_ordered_columns_sorted_by_variance():
 
     ordered = t.get_ordered_pc_columns()
     variances = [
-        t._pcas[col.rsplit("_pc", 1)[0]].explained_variance_[
-            int(col.rsplit("_pc", 1)[1]) - 1
-        ]
-        for col in ordered
+        t._pcas[col.rsplit("_pc", 1)[0]].explained_variance_[int(col.rsplit("_pc", 1)[1]) - 1] for col in ordered
     ]
     assert variances == sorted(variances, reverse=True)
 

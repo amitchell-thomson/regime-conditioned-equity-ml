@@ -53,9 +53,7 @@ def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None
 
     # Save as YAML or JSON
     with open("data/features/feature_metadata.yaml", "w") as f:
-        yaml.dump(
-            {"features": feature_metadata, "n_features": len(feature_metadata)}, f
-        )
+        yaml.dump({"features": feature_metadata, "n_features": len(feature_metadata)}, f)
 
     logger.info("Created metadata for %d features", len(feature_metadata))
 
@@ -114,9 +112,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     frequency_map = {}
     for ticker_name, ticker_config in regime_cfg.get("series", {}).items():
         series_code = ticker_config.get("id")
-        frequency = ticker_config.get(
-            "frequency", "daily"
-        )  # Default to daily if not specified
+        frequency = ticker_config.get("frequency", "daily")  # Default to daily if not specified
         if series_code:
             frequency_map[series_code] = frequency
 
@@ -127,9 +123,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     # Process each macro indicator
     for series_code in processed_data["series_code"].unique():
         # Extract data for this indicator
-        ticker_df = processed_data[
-            processed_data["series_code"] == series_code
-        ].set_index("date")
+        ticker_df = processed_data[processed_data["series_code"] == series_code].set_index("date")
 
         # Staleness flags: True = actual data point, False = forward-filled
         is_new_data = pd.Series(ticker_df["is_new_data"])

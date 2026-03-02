@@ -69,11 +69,7 @@ def load_raw_data(
         raise FileNotFoundError("Source directory not found: %s" % source_dir)
 
     # Find all parquet files recursively, excluding ALFRED files
-    parquet_files = sorted(
-        f
-        for f in source_dir.rglob("*.parquet")
-        if not f.name.endswith("_alfred.parquet")
-    )
+    parquet_files = sorted(f for f in source_dir.rglob("*.parquet") if not f.name.endswith("_alfred.parquet"))
 
     if not parquet_files:
         raise ValueError("No parquet files found in %s" % source_dir)
@@ -103,9 +99,7 @@ def load_raw_data(
 
     # Sort by date and series_code for consistency
     if "date" in combined_df.columns and "series_code" in combined_df.columns:
-        combined_df = combined_df.sort_values(["series_code", "date"]).reset_index(
-            drop=True
-        )
+        combined_df = combined_df.sort_values(["series_code", "date"]).reset_index(drop=True)
 
     logger.info("Combined dataframe shape: %s", combined_df.shape)
     logger.debug("Columns: %s", combined_df.columns.tolist())
@@ -173,8 +167,7 @@ def load_alfred_data(
 
     if not alfred_files:
         raise ValueError(
-            "No ALFRED parquet files found in %s. "
-            "Expected files matching '*_alfred.parquet'." % source_dir
+            "No ALFRED parquet files found in %s. " "Expected files matching '*_alfred.parquet'." % source_dir
         )
 
     logger.info("Found %d ALFRED parquet files in %s", len(alfred_files), source_dir)
@@ -204,9 +197,7 @@ def load_alfred_data(
     combined_df = pd.concat(dataframes, ignore_index=True)
 
     if "series_code" in combined_df.columns and "realtime_start" in combined_df.columns:
-        combined_df = combined_df.sort_values(
-            ["series_code", "realtime_start", "date"]
-        ).reset_index(drop=True)
+        combined_df = combined_df.sort_values(["series_code", "realtime_start", "date"]).reset_index(drop=True)
 
     logger.info(
         "Combined ALFRED shape: %s, %d series",

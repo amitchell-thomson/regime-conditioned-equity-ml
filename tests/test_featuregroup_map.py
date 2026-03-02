@@ -5,9 +5,7 @@ from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 def test_vixcls_maps_to_volatility():
     """VIXCLS features must map to 'volatility' as declared in regime_universe.yaml."""
-    result = build_featuregroup_map(
-        ["VIXCLS_level_zscore_126", "VIXCLS_level_zscore_63"]
-    )
+    result = build_featuregroup_map(["VIXCLS_level_zscore_126", "VIXCLS_level_zscore_63"])
     assert result["VIXCLS_level_zscore_126"] == "volatility"
     assert result["VIXCLS_level_zscore_63"] == "volatility"
 
@@ -68,6 +66,6 @@ def test_no_parquet_io(monkeypatch):
 
     # If load_dataframe is still imported and called, this test will catch it
     # by asserting the module no longer imports it
-    assert not hasattr(mod, "load_dataframe"), (
-        "build_featuregroup_map.py should not import load_dataframe after the refactor"
-    )
+    assert not hasattr(
+        mod, "load_dataframe"
+    ), "build_featuregroup_map.py should not import load_dataframe after the refactor"

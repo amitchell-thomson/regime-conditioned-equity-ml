@@ -7,9 +7,7 @@ import pandas as pd
 from regime_ml.regimes.hmm import HMMRegimeDetector, initialise_emissions
 
 
-def _make_synthetic_data(
-    n_samples: int = 100, n_features: int = 2, seed: int = 0
-) -> np.ndarray:
+def _make_synthetic_data(n_samples: int = 100, n_features: int = 2, seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     return rng.standard_normal((n_samples, n_features))
 
@@ -24,9 +22,9 @@ def test_convergence_warning_fires(caplog):
     with caplog.at_level(logging.WARNING, logger="regime_ml"):
         detector.fit(X)
 
-    assert any("did not converge" in r.message for r in caplog.records), (
-        "Expected a convergence WARNING log record from regime_ml.regimes.hmm"
-    )
+    assert any(
+        "did not converge" in r.message for r in caplog.records
+    ), "Expected a convergence WARNING log record from regime_ml.regimes.hmm"
 
 
 def test_convergence_warning_not_fired_when_converged(caplog):
@@ -37,9 +35,7 @@ def test_convergence_warning_not_fired_when_converged(caplog):
     with caplog.at_level(logging.WARNING, logger="regime_ml"):
         detector.fit(X)
 
-    convergence_warnings = [
-        r for r in caplog.records if "did not converge" in r.message
-    ]
+    convergence_warnings = [r for r in caplog.records if "did not converge" in r.message]
     assert len(convergence_warnings) == 0
 
 
@@ -57,9 +53,7 @@ def test_initialise_emissions_random_state_none():
         np.random.default_rng(1).standard_normal((80, 3)),
         columns=["f1", "f2", "f3"],
     )
-    means, covs, scaler = initialise_emissions(
-        df_train, n_clusters=2, random_state=None
-    )
+    means, covs, scaler = initialise_emissions(df_train, n_clusters=2, random_state=None)
     assert means.shape == (2, 3)
     assert covs.shape == (2, 3, 3)
 

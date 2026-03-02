@@ -140,9 +140,7 @@ class TestExpandingWindowCVKeys:
         result = _run_cv(df, n_regimes=2)
         if result["n_folds"] > 1:
             pss = result["per_state_share_std"]
-            assert set(pss.keys()) == {"0", "1"}, (
-                f"Expected keys {{'0','1'}}, got {set(pss.keys())}"
-            )
+            assert set(pss.keys()) == {"0", "1"}, f"Expected keys {{'0','1'}}, got {set(pss.keys())}"
 
 
 # ---------------------------------------------------------------------------
@@ -175,9 +173,9 @@ class TestChurnHardReject:
         """With min_cv_folds=100, any realistic run will have too few folds."""
         df = _make_features(n=800, seed=12)
         result = _run_cv(df, max_churn=1.0, min_cv_folds=100)
-        assert result["churn_hard_reject"] is True, (
-            "min_cv_folds=100 should always trigger hard reject for this data size"
-        )
+        assert (
+            result["churn_hard_reject"] is True
+        ), "min_cv_folds=100 should always trigger hard reject for this data size"
 
     def test_hard_reject_false_when_n_folds_meets_requirement(self):
         """With min_cv_folds=1, a run with at least 1 fold should not trigger."""
@@ -276,12 +274,8 @@ class TestSelectBestHMMModelChurnHardFilter:
             churn_rejected_ids={"model_A"},
         )
         leaderboard_ids = set(leaderboard["model_id"].tolist())
-        assert "model_A" not in leaderboard_ids, (
-            "model_A was churn-rejected and must not appear in the leaderboard"
-        )
-        assert best_id != "model_A", (
-            "model_A was churn-rejected and must not be selected as best"
-        )
+        assert "model_A" not in leaderboard_ids, "model_A was churn-rejected and must not appear in the leaderboard"
+        assert best_id != "model_A", "model_A was churn-rejected and must not be selected as best"
 
     def test_churn_rejection_appears_in_rejected_df(self):
         """Churn-rejected models must appear in rejected_df with the correct reason."""
@@ -293,12 +287,8 @@ class TestSelectBestHMMModelChurnHardFilter:
             churn_rejected_ids={"model_A"},
         )
         assert "model_A" in rejected_df["model_id"].values
-        reason = rejected_df.loc[
-            rejected_df["model_id"] == "model_A", "reason"
-        ].iloc[0]
-        assert "churn" in reason.lower(), (
-            f"Rejection reason should mention churn, got: '{reason}'"
-        )
+        reason = rejected_df.loc[rejected_df["model_id"] == "model_A", "reason"].iloc[0]
+        assert "churn" in reason.lower(), f"Rejection reason should mention churn, got: '{reason}'"
 
     def test_best_bic_wins_when_not_churn_rejected(self):
         """Without churn filtering, the model with best BIC should dominate (via bic_score)."""
@@ -308,9 +298,7 @@ class TestSelectBestHMMModelChurnHardFilter:
         results = _make_minimal_results(model_ids, bic_values)
 
         best_id, _, _ = select_best_hmm_model(results, churn_rejected_ids=None)
-        assert best_id == "model_B", (
-            "model_B has substantially better BIC and should win when churn filter is off"
-        )
+        assert best_id == "model_B", "model_B has substantially better BIC and should win when churn filter is off"
 
     def test_no_churn_rejected_ids_disables_hard_filter(self):
         """When churn_rejected_ids is None, no model should be rejected on churn grounds."""
@@ -324,9 +312,7 @@ class TestSelectBestHMMModelChurnHardFilter:
         )
         leaderboard_ids = set(leaderboard["model_id"].tolist())
         for mid in model_ids:
-            assert mid in leaderboard_ids, (
-                f"{mid} should not be churn-rejected when churn_rejected_ids=None"
-            )
+            assert mid in leaderboard_ids, f"{mid} should not be churn-rejected when churn_rejected_ids=None"
 
     def test_all_models_rejected_raises(self):
         """Hard-rejecting all models must raise ValueError with a useful message."""

@@ -22,7 +22,4 @@ def build_featuregroup_map(all_feature_names: list[str]) -> dict[str, str]:
     """
     series_cfg = load_configs()["macro_data"]["regime_universe"]["series"]
     code_to_cat: dict[str, str] = {v["id"]: v["category"] for v in series_cfg.values()}
-    return {
-        feat: code_to_cat.get(feat.split("_")[0], "unknown")
-        for feat in all_feature_names
-    }
+    return {feat: code_to_cat.get(feat.split("_")[0], "unknown") for feat in all_feature_names}

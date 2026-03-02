@@ -324,9 +324,7 @@ def plot_regime_periods(
         title=title,
     )
 
-    fig.update_layout(
-        xaxis_title="Date", yaxis_title="Regime", height=400, showlegend=True
-    )
+    fig.update_layout(xaxis_title="Date", yaxis_title="Regime", height=400, showlegend=True)
 
     return fig
 
@@ -468,8 +466,7 @@ def create_regime_summary_table(
     regime_duration_map[current_regime].append(current_length)
 
     means_df["Avg_Duration"] = [
-        np.mean(regime_duration_map[i]) if regime_duration_map[i] else 0
-        for i in range(n_regimes)
+        np.mean(regime_duration_map[i]) if regime_duration_map[i] else 0 for i in range(n_regimes)
     ]
 
     return means_df.round(2)
@@ -533,9 +530,7 @@ def plot_ticker_by_regime(
 
     # Ensure we have the requested price type
     if price_type not in ticker_data.columns:  # type: ignore[union-attr]  # yfinance return type is Any
-        logger.warning(
-            "Price type %s not found for %s, using Close instead", price_type, ticker
-        )
+        logger.warning("Price type %s not found for %s, using Close instead", price_type, ticker)
         price_type = "Close"
 
     # Create regime dataframe
@@ -577,9 +572,7 @@ def plot_ticker_by_regime(
                     y=regime_data[price_type],
                     mode="markers",
                     name=regime_name,
-                    marker=dict(
-                        color=regime_colors[regime_num], size=4, line=dict(width=0)
-                    ),
+                    marker=dict(color=regime_colors[regime_num], size=4, line=dict(width=0)),
                     hovertemplate=f"{regime_name}<br>Price: %{{y:.2f}}<br>Date: %{{x}}<extra></extra>",
                     legendgroup=regime_name,
                 )

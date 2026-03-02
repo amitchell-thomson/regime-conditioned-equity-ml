@@ -152,9 +152,7 @@ class TestArchetypeMatch:
         lr = _label_results({0: "expansion", 1: "recession"})
 
         df = validate_against_episodes(regimes, lr, episodes_path=ep_path)
-        assert (
-            df.loc[0, "archetype_match"] is True or df.loc[0, "archetype_match"] == True
-        )
+        assert df.loc[0, "archetype_match"] is True or df.loc[0, "archetype_match"] == True
 
     def test_archetype_match_false_when_dominant_differs(self, tmp_path):
         """State 1 dominates but expected_archetype='expansion' (mapped to state 0) → mismatch."""
@@ -175,10 +173,7 @@ class TestArchetypeMatch:
         lr = _label_results({0: "expansion", 1: "recession"})
 
         df = validate_against_episodes(regimes, lr, episodes_path=ep_path)
-        assert (
-            df.loc[0, "archetype_match"] is False
-            or df.loc[0, "archetype_match"] == False
-        )
+        assert df.loc[0, "archetype_match"] is False or df.loc[0, "archetype_match"] == False
 
     def test_expected_pct_is_fraction_in_expected_state(self, tmp_path):
         """expected_pct should equal fraction of days in the expected archetype's state."""
@@ -203,9 +198,7 @@ class TestArchetypeMatch:
         expected_pct = df.loc[0, "expected_pct"]
         assert 0.0 <= expected_pct <= 1.0
         # State 0 = expansion; ~150 of ~200 days in episode
-        assert expected_pct > 0.5, (
-            f"expected_pct={expected_pct} should be >0.5 (150 of ~200 days)"
-        )
+        assert expected_pct > 0.5, f"expected_pct={expected_pct} should be >0.5 (150 of ~200 days)"
 
 
 # ---------------------------------------------------------------------------

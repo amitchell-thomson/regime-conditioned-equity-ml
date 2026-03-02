@@ -17,9 +17,7 @@ def _make_features(n: int = 50, d: int = 3, seed: int = 0) -> pd.DataFrame:
 
 
 def _compute_hash(df: pd.DataFrame) -> str:
-    return hashlib.sha256(
-        pd.util.hash_pandas_object(df, index=True).values.tobytes()
-    ).hexdigest()[:16]
+    return hashlib.sha256(pd.util.hash_pandas_object(df, index=True).values.tobytes()).hexdigest()[:16]
 
 
 class TestFeaturesHash:

@@ -54,8 +54,6 @@ def load_configs() -> Dict[str, Any]:
     # Apply environment variable overrides
     env_data_path = os.environ.get("MACRO_DATA_PATH")
     if env_data_path:
-        cfg.setdefault("macro_data", {}).setdefault("regime_universe", {})[
-            "data_path"
-        ] = env_data_path
+        cfg.setdefault("macro_data", {}).setdefault("regime_universe", {})["data_path"] = env_data_path
 
     return cfg

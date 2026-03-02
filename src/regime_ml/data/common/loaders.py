@@ -15,9 +15,7 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent.parent.parent.parent
 
 
-def load_dataframe(
-    filepath: Union[str, Path], relative_to_root: bool = True, **kwargs
-) -> pd.DataFrame:
+def load_dataframe(filepath: Union[str, Path], relative_to_root: bool = True, **kwargs) -> pd.DataFrame:
     """Load a dataframe from anywhere in the project.
 
     This function automatically handles:
@@ -62,9 +60,7 @@ def load_dataframe(
     # Check if file exists
     if not filepath.exists():
         raise FileNotFoundError(
-            f"File not found: {filepath}\n"
-            f"Project root: {get_project_root()}\n"
-            f"Current directory: {Path.cwd()}"
+            f"File not found: {filepath}\n" f"Project root: {get_project_root()}\n" f"Current directory: {Path.cwd()}"
         )
 
     # Determine file format and load accordingly
@@ -84,10 +80,7 @@ def load_dataframe(
     }
 
     if suffix not in loaders:
-        raise ValueError(
-            f"Unsupported file format: {suffix}\n"
-            f"Supported formats: {', '.join(loaders.keys())}"
-        )
+        raise ValueError(f"Unsupported file format: {suffix}\n" f"Supported formats: {', '.join(loaders.keys())}")
 
     # Load the dataframe
     loader_func = loaders[suffix]

@@ -24,9 +24,7 @@ def _fit_detector(
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((n_samples, n_features))
     df = pd.DataFrame(X, columns=[f"f{i}" for i in range(n_features)])
-    means, covs, scaler = initialise_emissions(
-        df, n_clusters=n_regimes, random_state=seed
-    )
+    means, covs, scaler = initialise_emissions(df, n_clusters=n_regimes, random_state=seed)
     det = HMMRegimeDetector(
         n_regimes=n_regimes,
         random_state=seed,
@@ -91,9 +89,7 @@ def test_align_states_non_full_covariance_raises():
     rng = np.random.default_rng(0)
     X = rng.standard_normal((200, 3))
     df = pd.DataFrame(X, columns=["a", "b", "c"])
-    means, covs, scaler = initialise_emissions(
-        df, n_clusters=2, random_state=0, covariance_type="diag"
-    )
+    means, covs, scaler = initialise_emissions(df, n_clusters=2, random_state=0, covariance_type="diag")
     det = HMMRegimeDetector(
         n_regimes=2,
         covariance_type="diag",

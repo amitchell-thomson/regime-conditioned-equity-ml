@@ -9,9 +9,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def add_staleness_indicators(
-    df: pd.DataFrame, calendar: pd.DatetimeIndex
-) -> pd.DataFrame:
+def add_staleness_indicators(df: pd.DataFrame, calendar: pd.DatetimeIndex) -> pd.DataFrame:
     """
     Add metadata about the data freshness before forward-filling.
     This preserves the information about when the data was actually released.
@@ -52,9 +50,7 @@ def add_staleness_indicators(
             return "monthly"
         return "irregular"
 
-    df["native_freq"] = df.groupby("series_code")["date"].transform(
-        lambda x: infer_freq(x)
-    )
+    df["native_freq"] = df.groupby("series_code")["date"].transform(lambda x: infer_freq(x))
 
     # Add observation sequence number (at native frequency)
     df["obs_number"] = df.groupby("series_code").cumcount() + 1
@@ -111,14 +107,8 @@ def align_to_calendar(
         # Apply max staleness limit: NaN out values that are too stale
         if max_staleness_days is not None:
             native_freq_notnull = aligned["native_freq"].dropna()
-            freq = (
-                native_freq_notnull.iloc[0]
-                if not native_freq_notnull.empty
-                else "unknown"
-            )
-            threshold = max_staleness_days.get(
-                freq, max_staleness_days.get("unknown", 65)
-            )
+            freq = native_freq_notnull.iloc[0] if not native_freq_notnull.empty else "unknown"
+            threshold = max_staleness_days.get(freq, max_staleness_days.get("unknown", 65))
             stale_mask = aligned["days_since_update"] > threshold
             if stale_mask.any():
                 aligned.loc[stale_mask, "value"] = np.nan
@@ -178,10 +168,7 @@ def build_realtime_series(
         alfred_df = alfred_df[alfred_df["series_code"].isin(series_codes)]
 
     if alfred_df.empty:
-        raise ValueError(
-            "build_realtime_series: no data after filtering to series_codes=%s"
-            % series_codes
-        )
+        raise ValueError("build_realtime_series: no data after filtering to series_codes=%s" % series_codes)
 
     results = []
     for code, group in alfred_df.groupby("series_code"):
@@ -217,10 +204,7 @@ def build_realtime_series(
             results.append(pd.DataFrame(rows))
 
     if not results:
-        raise ValueError(
-            "build_realtime_series produced no output. "
-            "Check series_codes and input data."
-        )
+        raise ValueError("build_realtime_series produced no output. " "Check series_codes and input data.")
 
     output = pd.concat(results, ignore_index=True)
     logger.info(

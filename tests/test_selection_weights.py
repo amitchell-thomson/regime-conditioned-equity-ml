@@ -46,12 +46,12 @@ class TestScoringWeights:
 
         sig = inspect.signature(select_best_hmm_model)
         # churn_scores param must not exist; churn_rejected_ids must exist
-        assert "churn_scores" not in sig.parameters, (
-            "churn_scores parameter should have been replaced by churn_rejected_ids"
-        )
-        assert "churn_rejected_ids" in sig.parameters, (
-            "churn_rejected_ids parameter must be present for hard churn filtering"
-        )
+        assert (
+            "churn_scores" not in sig.parameters
+        ), "churn_scores parameter should have been replaced by churn_rejected_ids"
+        assert (
+            "churn_rejected_ids" in sig.parameters
+        ), "churn_rejected_ids parameter must be present for hard churn filtering"
 
 
 # ---------------------------------------------------------------------------

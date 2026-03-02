@@ -104,7 +104,7 @@ vix:
 uv sync
 pytest tests/ -v
 pytest -k "test_transform" -v
-black src/ tests/
+ruff format src/ tests/
 ruff check src/ tests/
 ruff check --fix src/ tests/
 ```

@@ -106,9 +106,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
         else:
             fred_codes.append(series_cfg["id"])
 
-    logger.info(
-        "  ALFRED (point-in-time, %d series): %s", len(alfred_codes), alfred_codes
-    )
+    logger.info("  ALFRED (point-in-time, %d series): %s", len(alfred_codes), alfred_codes)
     logger.info("  FRED   (final revised,  %d series): %s", len(fred_codes), fred_codes)
 
     parts: list[pd.DataFrame] = []
@@ -149,9 +147,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     stage_start = time.time()
 
     df_selected = select_data(df_raw, macro_cfg)
-    logger.info(
-        "  - Selected %d series from config", df_selected["series_code"].nunique()
-    )
+    logger.info("  - Selected %d series from config", df_selected["series_code"].nunique())
 
     df_clean = clean_data(df_selected)
     logger.info("  - Cleaned data (types, weekends, deduplication)")
@@ -165,9 +161,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     stage_start = time.time()
 
     # Create master business day calendar
-    master_calendar = create_master_calendar(
-        macro_cfg["lookback"]["start"], macro_cfg["lookback"]["end"]
-    )
+    master_calendar = create_master_calendar(macro_cfg["lookback"]["start"], macro_cfg["lookback"]["end"])
     logger.info("  - Created calendar: %d business days", len(master_calendar))
 
     # Add staleness tracking
@@ -176,9 +170,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
 
     # Align to calendar with forward-fill, applying max staleness limit if configured
     max_staleness_cfg = macro_cfg.get("max_staleness_days", None)
-    df_aligned = align_to_calendar(
-        df_stale, master_calendar, max_staleness_days=max_staleness_cfg
-    )
+    df_aligned = align_to_calendar(df_stale, master_calendar, max_staleness_days=max_staleness_cfg)
     logger.info("  - Aligned to business days")
 
     # Trim each series to its own first valid observation (ragged starts).
@@ -193,9 +185,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
     _log_stage_header(4, 5, "Validate")
     stage_start = time.time()
 
-    report = validate_data(
-        df_processed, cfg=macro_cfg, expected_calendar=master_calendar
-    )
+    report = validate_data(df_processed, cfg=macro_cfg, expected_calendar=master_calendar)
     logger.info("")
     print_validation_report(report)
 
@@ -204,9 +194,7 @@ def run_macro_data_pipeline() -> pd.DataFrame:
 
     # Check if validation passed
     if report["status"] != "PASS":
-        logger.warning(
-            "Validation FAILED — %d critical issue(s):", len(report["issues"])
-        )
+        logger.warning("Validation FAILED — %d critical issue(s):", len(report["issues"]))
         for issue in report["issues"]:
             logger.warning("  [ISSUE] %s", issue)
     if report["warnings"]:

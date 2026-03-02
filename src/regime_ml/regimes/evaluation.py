@@ -223,11 +223,7 @@ def evaluate_macro_coherence(
 
     # Average R^2 score per group
 
-    name_to_idx = (
-        {name: i for i, name in enumerate(feature_names)}
-        if feature_names is not None
-        else {}
-    )
+    name_to_idx = {name: i for i, name in enumerate(feature_names)} if feature_names is not None else {}
     group_r2: Dict[str, float] = {}
     if featuregroup_map is not None:
         # featuregroup_map: {feature_name: group_name}
@@ -324,11 +320,7 @@ def validate_gaussian_assumption(
             n_clean = len(col_clean)
 
             skew = float(scipy_stats.skew(col_clean)) if n_clean >= 2 else np.nan
-            kurt = (
-                float(scipy_stats.kurtosis(col_clean, fisher=True))
-                if n_clean >= 2
-                else np.nan
-            )
+            kurt = float(scipy_stats.kurtosis(col_clean, fisher=True)) if n_clean >= 2 else np.nan
 
             if n_clean >= _SHAPIRO_MIN_N:
                 w_stat, p_val = scipy_stats.shapiro(col_clean)
@@ -378,9 +370,7 @@ def compare_hmm_models(
 
     # Read n_mix horizon from config (evaluation.transmat_sanity.n_mix).
     _regime_cfg = load_configs().get("regimes", {})
-    n_mix: int = int(
-        _regime_cfg.get("evaluation", {}).get("transmat_sanity", {}).get("n_mix", 20)
-    )
+    n_mix: int = int(_regime_cfg.get("evaluation", {}).get("transmat_sanity", {}).get("n_mix", 20))
 
     # Build global group map once (for all possible features)
     global_group_map = build_featuregroup_map(list(features.columns))
@@ -400,9 +390,7 @@ def compare_hmm_models(
         df_selected = features[selected_features]
 
         # Build group map only for selected features
-        featuregroup_map = {
-            f: global_group_map.get(f, "unknown") for f in selected_features
-        }
+        featuregroup_map = {f: global_group_map.get(f, "unknown") for f in selected_features}
 
         # Scale
         X_full = df_selected.values
@@ -422,12 +410,8 @@ def compare_hmm_models(
 
         # --- IS / OOS outputs
         # (compute on each slice separately; avoids any accidental cross-slice dependence)
-        regimes_is = (
-            model.predict(X_is) if X_is.shape[0] > 0 else np.array([], dtype=int)
-        )
-        regimes_oos = (
-            model.predict(X_oos) if X_oos.shape[0] > 0 else np.array([], dtype=int)
-        )
+        regimes_is = model.predict(X_is) if X_is.shape[0] > 0 else np.array([], dtype=int)
+        regimes_oos = model.predict(X_oos) if X_oos.shape[0] > 0 else np.array([], dtype=int)
 
         smooth_is = model.smooth_proba(X_is) if X_is.shape[0] > 0 else None
 
@@ -437,9 +421,7 @@ def compare_hmm_models(
         # --- Metrics (FULL)
         regime_stability_full = evaluate_regime_stability(regimes_full)
         entropy_balance_full = evaluate_entropy_balance(filt_full)
-        trans_sanity = evaluate_transmat_sanity(
-            model.get_transition_matrix(), n_mix=n_mix
-        )
+        trans_sanity = evaluate_transmat_sanity(model.get_transition_matrix(), n_mix=n_mix)
         # filt_full (not smooth_full) — smooth_proba runs forward-backward on the
         # complete IS+OOS sequence; each IS step sees future OOS observations.
         # filter_proba is causal: uses only t=0..s at each step s.
@@ -451,34 +433,22 @@ def compare_hmm_models(
         )
 
         # --- Metrics (IS / OOS)
-        regime_stability_is = (
-            evaluate_regime_stability(regimes_is) if regimes_is.size else {}
-        )
-        regime_stability_oos = (
-            evaluate_regime_stability(regimes_oos) if regimes_oos.size else {}
-        )
+        regime_stability_is = evaluate_regime_stability(regimes_is) if regimes_is.size else {}
+        regime_stability_oos = evaluate_regime_stability(regimes_oos) if regimes_oos.size else {}
 
-        entropy_balance_is = (
-            evaluate_entropy_balance(filt_is) if filt_is is not None else {}
-        )
-        entropy_balance_oos = (
-            evaluate_entropy_balance(filt_oos) if filt_oos is not None else {}
-        )
+        entropy_balance_is = evaluate_entropy_balance(filt_is) if filt_is is not None else {}
+        entropy_balance_oos = evaluate_entropy_balance(filt_oos) if filt_oos is not None else {}
 
         # IS: smoothed probabilities are acceptable for interpretation (not a trading signal).
         macro_coh_is = (
-            evaluate_macro_coherence(
-                X_is, smooth_is, selected_features, featuregroup_map
-            )
+            evaluate_macro_coherence(X_is, smooth_is, selected_features, featuregroup_map)
             if smooth_is is not None
             else {}
         )
         # OOS: must use filter_proba (causal). smooth_proba runs forward-backward within the
         # OOS window, giving each time-step t access to t+1…T_oos — look-ahead bias.
         macro_coh_oos = (
-            evaluate_macro_coherence(
-                X_oos, filt_oos, selected_features, featuregroup_map
-            )
+            evaluate_macro_coherence(X_oos, filt_oos, selected_features, featuregroup_map)
             if filt_oos is not None
             else {}
         )
@@ -565,9 +535,7 @@ def equity_metrics_by_regime(
         ann_vol = float(vol_daily * np.sqrt(freq))
 
         ex_daily = mean_daily - rf_daily
-        sharpe = (
-            float((ex_daily / vol_daily) * np.sqrt(freq)) if vol_daily > 0 else np.nan
-        )
+        sharpe = float((ex_daily / vol_daily) * np.sqrt(freq)) if vol_daily > 0 else np.nan
 
         # max drawdown within that regime's subsequence (contiguous in time is not required for this simple view)
         wealth = np.cumprod(1.0 + rets)
@@ -587,11 +555,7 @@ def equity_metrics_by_regime(
             }
         )
 
-    return (
-        pd.DataFrame(out)
-        .sort_values("ann_return", ascending=False)
-        .reset_index(drop=True)
-    )
+    return pd.DataFrame(out).sort_values("ann_return", ascending=False).reset_index(drop=True)
 
 
 def expanding_window_cv(
@@ -684,8 +648,7 @@ def expanding_window_cv(
 
     if len(fold_ends) < 2:
         logger.warning(
-            "expanding_window_cv: fewer than 2 folds available — "
-            "increase data history or reduce min_train_years."
+            "expanding_window_cv: fewer than 2 folds available — " "increase data history or reduce min_train_years."
         )
         return {
             "label_churn": None,
@@ -698,7 +661,7 @@ def expanding_window_cv(
 
     fold_scores: list[float] = []
     fold_labels: list[np.ndarray] = []  # Viterbi labels per fold on the OOS window
-    fold_diag_means: list[float] = []   # mean(diag(transmat)) per fold
+    fold_diag_means: list[float] = []  # mean(diag(transmat)) per fold
     fold_state_shares: list[Dict[int, float]] = []  # {state: OOS share} per fold
     nontrivial_perm_count: int = 0
     ref_detector = None
@@ -706,9 +669,7 @@ def expanding_window_cv(
     for fold_end in fold_ends:
         oos_end = fold_end + pd.DateOffset(months=oos_window_months)
         df_is = features_df[features_df.index <= fold_end]
-        df_oos = features_df[
-            (features_df.index > fold_end) & (features_df.index <= oos_end)
-        ]
+        df_oos = features_df[(features_df.index > fold_end) & (features_df.index <= oos_end)]
 
         if len(df_is) < 30 or len(df_oos) < 10:
             logger.debug(
@@ -729,9 +690,7 @@ def expanding_window_cv(
                 feature_names=feature_names,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "expanding_window_cv: fold %s fit failed: %s", fold_end.date(), exc
-            )
+            logger.warning("expanding_window_cv: fold %s fit failed: %s", fold_end.date(), exc)
             continue
 
         X_oos = scaler.transform(df_oos.values)
@@ -745,13 +704,7 @@ def expanding_window_cv(
         else:
             means_ref = ref_detector.model.means_
             cost = np.array(
-                [
-                    [
-                        np.linalg.norm(means_cand[i] - means_ref[j])
-                        for j in range(n_regimes)
-                    ]
-                    for i in range(n_regimes)
-                ]
+                [[np.linalg.norm(means_cand[i] - means_ref[j]) for j in range(n_regimes)] for i in range(n_regimes)]
             )
             _, col_ind = linear_sum_assignment(cost)
             perm = col_ind
@@ -774,10 +727,7 @@ def expanding_window_cv(
         # A state whose share swings widely as IS grows is not a stable regime signal.
         n_oos = len(aligned_labels)
         if n_oos > 0:
-            shares = {
-                int(k): float(np.sum(aligned_labels == k)) / n_oos
-                for k in range(n_regimes)
-            }
+            shares = {int(k): float(np.sum(aligned_labels == k)) / n_oos for k in range(n_regimes)}
             fold_state_shares.append(shares)
 
         # OOS macro coherence — causal filter_proba only (no smooth_proba)
@@ -835,9 +785,7 @@ def expanding_window_cv(
     # Positive = coherence improving as more IS data is added (desirable).
     # Flat or negative = diminishing returns or structural instability.
     if len(valid_scores) >= 2:
-        valid_idx_and_scores = [
-            (i, s) for i, s in enumerate(fold_scores) if np.isfinite(s)
-        ]
+        valid_idx_and_scores = [(i, s) for i, s in enumerate(fold_scores) if np.isfinite(s)]
         xs = np.array([pair[0] for pair in valid_idx_and_scores], float)
         ys = np.array([pair[1] for pair in valid_idx_and_scores], float)
         fold_score_slope = float(np.polyfit(xs, ys, 1)[0])
@@ -846,24 +794,19 @@ def expanding_window_cv(
 
     # Std of mean(diag(transmat)) across folds — measures how consistently the
     # self-transition probabilities are recovered as the IS window grows.
-    transmat_diag_std = (
-        float(np.std(fold_diag_means)) if len(fold_diag_means) > 1 else np.nan
-    )
+    transmat_diag_std = float(np.std(fold_diag_means)) if len(fold_diag_means) > 1 else np.nan
 
     # Per-state OOS share std — flags states whose relative frequency is unstable.
     per_state_share_std: Dict[int, float | None] = {}
     if fold_state_shares:
         for k in range(n_regimes):
             state_shares = [s.get(k, 0.0) for s in fold_state_shares]
-            per_state_share_std[k] = (
-                float(np.std(state_shares)) if len(state_shares) > 1 else None
-            )
+            per_state_share_std[k] = float(np.std(state_shares)) if len(state_shares) > 1 else None
 
     # Hard-reject if label_churn exceeds the configured threshold or if too few
     # folds completed for a reliable estimate.
     churn_hard_reject = bool(
-        (np.isfinite(label_churn) and label_churn > churn_hard_threshold)
-        or n_folds < min_cv_folds_required
+        (np.isfinite(label_churn) and label_churn > churn_hard_threshold) or n_folds < min_cv_folds_required
     )
 
     def _fmt(x: float) -> float | None:
@@ -879,23 +822,13 @@ def expanding_window_cv(
         "churn_hard_reject": churn_hard_reject,
         "max_pairwise_churn": _fmt(max_pairwise_churn),
         "n_nontrivial_perms": nontrivial_perm_count,
-        "fold_score_slope": (
-            round(fold_score_slope, 6) if np.isfinite(fold_score_slope) else None
-        ),
-        "transmat_diag_std": (
-            round(transmat_diag_std, 6) if np.isfinite(transmat_diag_std) else None
-        ),
-        "per_state_share_std": {
-            str(k): _fmt(v) if v is not None else None
-            for k, v in per_state_share_std.items()
-        },
+        "fold_score_slope": (round(fold_score_slope, 6) if np.isfinite(fold_score_slope) else None),
+        "transmat_diag_std": (round(transmat_diag_std, 6) if np.isfinite(transmat_diag_std) else None),
+        "per_state_share_std": {str(k): _fmt(v) if v is not None else None for k, v in per_state_share_std.items()},
     }
 
 
-_DEFAULT_EPISODES_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / "configs/regimes/economic_episodes.yaml"
-)
+_DEFAULT_EPISODES_PATH = Path(__file__).parent.parent.parent.parent / "configs/regimes/economic_episodes.yaml"
 
 
 def validate_against_episodes(
@@ -924,9 +857,7 @@ def validate_against_episodes(
           dominant_state, dominant_label, archetype_match,
           expected_pct, dominant_pct, n_days
     """
-    ep_path = (
-        Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
-    )
+    ep_path = Path(episodes_path) if episodes_path is not None else _DEFAULT_EPISODES_PATH
     if not ep_path.exists():
         raise FileNotFoundError(f"economic_episodes.yaml not found at {ep_path}.")
 
@@ -936,9 +867,7 @@ def validate_against_episodes(
 
     # Build lookup: archetype_key → state_idx
     key_to_state: dict[str | None, int] = {
-        r["archetype_key"]: r["state_idx"]
-        for r in label_results
-        if r.get("archetype_key") is not None
+        r["archetype_key"]: r["state_idx"] for r in label_results if r.get("archetype_key") is not None
     }
     state_to_label: dict[int, str] = {r["state_idx"]: r["label"] for r in label_results}
 
@@ -987,9 +916,7 @@ def validate_against_episodes(
         else:
             expected_pct = np.nan
 
-        archetype_match = (
-            dominant_state == expected_state if expected_state is not None else False
-        )
+        archetype_match = dominant_state == expected_state if expected_state is not None else False
 
         rows.append(
             {
@@ -1000,9 +927,7 @@ def validate_against_episodes(
                 "dominant_state": dominant_state,
                 "dominant_label": dominant_label,
                 "archetype_match": archetype_match,
-                "expected_pct": (
-                    round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan
-                ),
+                "expected_pct": (round(expected_pct, 3) if np.isfinite(expected_pct) else np.nan),
                 "dominant_pct": round(dominant_pct, 3),
                 "n_days": n_days,
             }

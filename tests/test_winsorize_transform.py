@@ -113,9 +113,7 @@ def test_strict_staleness_mode_preserves_length():
     s = _make_series(n=50)
     is_new = pd.Series(False, index=s.index)
     is_new.iloc[::5] = True
-    result = Winsorize(sigma=4.0).transform(
-        s, is_new_data=is_new, staleness_mode="strict"
-    )
+    result = Winsorize(sigma=4.0).transform(s, is_new_data=is_new, staleness_mode="strict")
     assert len(result) == len(s)
 
 
@@ -123,13 +121,9 @@ def test_strict_staleness_mode_clips_values():
     """Under 'strict' mode, non-NaN output values must all lie within [-sigma, +sigma]."""
     s = _make_series(n=60)
     is_new = pd.Series(True, index=s.index)
-    result = Winsorize(sigma=4.0).transform(
-        s, is_new_data=is_new, staleness_mode="strict"
-    )
+    result = Winsorize(sigma=4.0).transform(s, is_new_data=is_new, staleness_mode="strict")
     valid = result.dropna()
-    assert (valid.abs() <= 4.0 + 1e-9).all(), (
-        f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
-    )
+    assert (valid.abs() <= 4.0 + 1e-9).all(), f"Values outside ±4σ found: {valid[valid.abs() > 4.0 + 1e-9]}"
 
 
 def test_ignore_staleness_mode_clips_values():

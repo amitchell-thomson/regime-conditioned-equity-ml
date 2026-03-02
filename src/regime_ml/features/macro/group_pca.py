@@ -58,9 +58,7 @@ class GroupPCATransformer:
         self._pcas: dict[str, PCA] = {}
         self._group_features: dict[str, list[str]] = {}
 
-    def fit(
-        self, features: pd.DataFrame, group_map: dict[str, str]
-    ) -> "GroupPCATransformer":
+    def fit(self, features: pd.DataFrame, group_map: dict[str, str]) -> "GroupPCATransformer":
         """
         Fit PCA per group using IS rows only.
 
@@ -130,8 +128,7 @@ class GroupPCATransformer:
                     if should_flip:
                         pca.components_[0] *= -1
                         logger.info(
-                            "Group '%s': flipped PC1 sign (anchor=%s, loading_before_flip=%.3f,"
-                            " good_direction=%s)",
+                            "Group '%s': flipped PC1 sign (anchor=%s, loading_before_flip=%.3f," " good_direction=%s)",
                             group,
                             anchor_series,
                             loading,
@@ -139,8 +136,7 @@ class GroupPCATransformer:
                         )
                     else:
                         logger.info(
-                            "Group '%s': PC1 sign already correct (anchor=%s, loading=%.3f,"
-                            " good_direction=%s)",
+                            "Group '%s': PC1 sign already correct (anchor=%s, loading=%.3f," " good_direction=%s)",
                             group,
                             anchor_series,
                             loading,
@@ -157,10 +153,7 @@ class GroupPCATransformer:
             self._pcas[group] = pca
             self._group_features[group] = feats
 
-            var_ratios = ", ".join(
-                f"PC{i + 1}={r:.1%}"
-                for i, r in enumerate(pca.explained_variance_ratio_)
-            )
+            var_ratios = ", ".join(f"PC{i + 1}={r:.1%}" for i, r in enumerate(pca.explained_variance_ratio_))
             logger.info(
                 "Group '%s': %d features → %d PCs | explained variance: %s",
                 group,
@@ -233,9 +226,7 @@ class GroupPCATransformer:
         feature count of N.
         """
         if not self._pcas:
-            raise RuntimeError(
-                "GroupPCATransformer must be fit() before get_ordered_pc_columns()."
-            )
+            raise RuntimeError("GroupPCATransformer must be fit() before get_ordered_pc_columns().")
 
         all_pcs: list[tuple[str, float]] = []
         for group, pca in self._pcas.items():
@@ -256,9 +247,7 @@ class GroupPCATransformer:
             e.g. rates loadings show how T10Y3M, DGS10, DGS2 combine into rates_pc1.
         """
         if not self._pcas:
-            raise RuntimeError(
-                "GroupPCATransformer must be fit() before get_loadings()."
-            )
+            raise RuntimeError("GroupPCATransformer must be fit() before get_loadings().")
 
         loadings: dict[str, pd.DataFrame] = {}
         for group, pca in self._pcas.items():
@@ -293,9 +282,7 @@ class GroupPCATransformer:
         # Global explained variance summary
         rows = []
         for group, pca in self._pcas.items():
-            for i, (var, ratio) in enumerate(
-                zip(pca.explained_variance_, pca.explained_variance_ratio_)
-            ):
+            for i, (var, ratio) in enumerate(zip(pca.explained_variance_, pca.explained_variance_ratio_)):
                 rows.append(
                     {
                         "group": group,
@@ -306,9 +293,7 @@ class GroupPCATransformer:
                     }
                 )
 
-        summary_df = pd.DataFrame(rows).sort_values(
-            "explained_variance", ascending=False
-        )
+        summary_df = pd.DataFrame(rows).sort_values("explained_variance", ascending=False)
         summary_path = directory / "pca_explained_variance.csv"
         summary_df.to_csv(summary_path, index=False)
 

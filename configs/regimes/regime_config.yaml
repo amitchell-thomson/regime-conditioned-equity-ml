@@ -8,8 +8,8 @@ train_end_date: "2019-01-01"
 # fit_best_of_n_seeds() tries range(n_init) seeds and returns the highest-LL
 # model that passes the degeneracy filter. All values must come from this config.
 hmm:
-  n_init: 10              # Number of seeds to try (range(0, n_init))
-  min_regime_share: 0.03  # Degeneracy filter: reject if any regime < this fraction
+  n_init: 10 # Number of seeds to try (range(0, n_init))
+  min_regime_share: 0.03 # Degeneracy filter: reject if any regime < this fraction
 
 # Grid search over HMM hyperparameters evaluated by compare_hmm_models().
 # covariance_types: "full" only — cross-group PCA correlations (e.g. employment-growth
@@ -53,21 +53,21 @@ selection:
   #   with probability > 0.001. States with only 1 exit path force cascade transitions
   #   and produce short whipsaw episodes when the model must route through intermediate states.
   filters:
-    max_implied_duration: 1500.0  # hard ceiling only for near-absorbing states; soft score penalises >150d
-    min_exit_paths: 1            # reject truly absorbing states (0 exits); 1-exit cascades penalised in transition score
+    max_implied_duration: 1500.0 # hard ceiling only for near-absorbing states; soft score penalises >150d
+    min_exit_paths: 1 # reject truly absorbing states (0 exits); 1-exit cascades penalised in transition score
   soft_score:
     duration:
-      optimal: 65.0   # Preferred median implied duration (days, ~4-5 months)
-      lo: 20.0        # Lower acceptable bound
-      hi: 150.0       # Upper acceptable bound
-      slack: 0.5      # Decay rate beyond bounds (fraction of hi-lo)
+      optimal: 65.0 # Preferred median implied duration (days, ~4-5 months)
+      lo: 20.0 # Lower acceptable bound
+      hi: 150.0 # Upper acceptable bound
+      slack: 0.5 # Decay rate beyond bounds (fraction of hi-lo)
     turnover:
-      optimal: 0.15   # Preferred 20-day total-variation distance
+      optimal: 0.15 # Preferred 20-day total-variation distance
       lo: 0.05
       hi: 0.30
       slack: 1.0
     persistence:
-      optimal: 90.0   # Preferred average regime persistence (days)
+      optimal: 90.0 # Preferred average regime persistence (days)
       lo: 20.0
       hi: 200.0
       slack: 1.0
@@ -76,14 +76,14 @@ selection:
     # model and a 4-regime model with similar absolute maha/anova should receive
     # similar macro scores; BIC then decides between them.
     maha:
-      optimal: 2.0    # Preferred Mahalanobis separation between regimes
-      lo: 1.0         # Minimum acceptable (below = redundant/indistinct regimes)
-      hi: 4.0         # Upper bound (rare; score still high above this)
+      optimal: 2.0 # Preferred Mahalanobis separation between regimes
+      lo: 1.0 # Minimum acceptable (below = redundant/indistinct regimes)
+      hi: 4.0 # Upper bound (rare; score still high above this)
       slack: 0.5
     anova:
-      optimal: 0.35   # Preferred ANOVA R² (fraction of variance explained by regime)
-      lo: 0.10        # Poor macro coherence below this
-      hi: 0.60        # Very high coherence (possible overfitting risk)
+      optimal: 0.35 # Preferred ANOVA R² (fraction of variance explained by regime)
+      lo: 0.10 # Poor macro coherence below this
+      hi: 0.60 # Very high coherence (possible overfitting risk)
       slack: 0.5
 
 # Expanding-window cross-validation stability diagnostic.
@@ -97,16 +97,17 @@ selection:
 cross_validation:
   enabled: true
   hard_filter:
-    max_churn: 0.65        # reject model if label_churn > this (hard rejection, not soft)
-    min_cv_folds: 4        # reject model if fewer than this many folds complete
+    max_churn: 0.65 # reject model if label_churn > this (hard rejection, not soft)
+    min_cv_folds: 4 # reject model if fewer than this many folds complete
   min_train_years: 5
   fold_step_months: 12
   oos_window_months: 12
-  max_churn_warning: 0.20   # log WARNING if label_churn > this (diagnostic only)
+  max_churn_warning: 0.20 # log WARNING if label_churn > this (diagnostic only)
 
 # Output file paths (relative to project root).
 outputs:
   features_path: "data/features/macro_features_ready.parquet"
+  feature_metadata: "data/features/feature_metadata.yaml"
   regime_assignments: "data/regimes/regime_assignments.parquet"
   model_leaderboard: "data/regimes/model_leaderboard.csv"
   label_results: "data/regimes/label_results.json"
@@ -132,16 +133,16 @@ feature_selection:
     sign_anchors:
       rates:
         series: "T10Y2Y"
-        good_direction: "high"   # High T10Y2Y = steep curve = accommodative = good
+        good_direction: "high" # High T10Y2Y = steep curve = accommodative = good
       real_economy:
         series: "CFNAI"
-        good_direction: "high"   # High CFNAI = strong activity = good real economy
+        good_direction: "high" # High CFNAI = strong activity = good real economy
       credit:
         series: "NFCI"
-        good_direction: "low"    # Low NFCI = easy financial conditions = good
+        good_direction: "low" # Low NFCI = easy financial conditions = good
       volatility:
         series: "VIXCLS"
-        good_direction: "low"    # Low VIX = calm markets = good
+        good_direction: "low" # Low VIX = calm markets = good
   cross_group_correlation:
     # Warn if any cross-group PC pair exceeds this absolute Pearson correlation in IS data.
     # PCA makes within-group features orthogonal; this catches cross-group redundancy.

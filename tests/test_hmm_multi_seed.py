@@ -55,9 +55,7 @@ def test_best_of_n_ll_is_optimal():
 
     df = _make_df(n=400, seed=7)
     n_seeds = 5
-    detector, scaler = fit_best_of_n_seeds(
-        df, n_regimes=2, n_init=n_seeds, min_regime_share=0.0
-    )
+    detector, scaler = fit_best_of_n_seeds(df, n_regimes=2, n_init=n_seeds, min_regime_share=0.0)
     X_scaled = scaler.transform(df.values)
     best_ll = detector.score(X_scaled)
 
@@ -79,9 +77,9 @@ def test_best_of_n_ll_is_optimal():
         if not sanity["tv_distance_valid"]:
             # Correctly excluded: absorbing state; LL comparison not meaningful.
             continue
-        assert best_ll >= seed_ll - 1e-6, (
-            f"Returned LL {best_ll:.4f} is below valid-transmat seed {seed} LL {seed_ll:.4f}."
-        )
+        assert (
+            best_ll >= seed_ll - 1e-6
+        ), f"Returned LL {best_ll:.4f} is below valid-transmat seed {seed} LL {seed_ll:.4f}."
 
 
 def test_degeneracy_filter_fallback_warning(caplog):
@@ -89,12 +87,8 @@ def test_degeneracy_filter_fallback_warning(caplog):
     df = _make_df(n=200, seed=1)
     # min_regime_share=0.99 is impossible for n_regimes=2 → all seeds fail filter.
     with caplog.at_level(logging.WARNING, logger="regime_ml"):
-        detector, _ = fit_best_of_n_seeds(
-            df, n_regimes=2, n_init=3, min_regime_share=0.99
-        )
-    warning_messages = [
-        r.message for r in caplog.records if r.levelno == logging.WARNING
-    ]
+        detector, _ = fit_best_of_n_seeds(df, n_regimes=2, n_init=3, min_regime_share=0.99)
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
     assert any("degeneracy filter" in m for m in warning_messages)
     assert detector.is_fitted
 
@@ -105,15 +99,9 @@ def test_n_init_seeds_all_logged(caplog):
     with caplog.at_level(logging.INFO, logger="regime_ml"):
         fit_best_of_n_seeds(df, n_regimes=2, n_init=3)
     seed_logs = [
-        r
-        for r in caplog.records
-        if "fit_best_of_n_seeds" in r.message
-        and "seed=" in r.message
-        and "ll=" in r.message
+        r for r in caplog.records if "fit_best_of_n_seeds" in r.message and "seed=" in r.message and "ll=" in r.message
     ]
-    assert len(seed_logs) >= 3, (
-        f"Expected at least 3 per-seed log entries, got {len(seed_logs)}."
-    )
+    assert len(seed_logs) >= 3, f"Expected at least 3 per-seed log entries, got {len(seed_logs)}."
 
 
 def test_is_boundary_enforced():

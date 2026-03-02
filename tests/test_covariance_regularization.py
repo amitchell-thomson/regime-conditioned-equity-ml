@@ -75,16 +75,12 @@ def test_degenerate_cluster_uses_identity_fallback_and_logs_warning(caplog):
 def test_diag_covariance_type_returns_correct_shape():
     """covariance_type='diag' must return shape (n_clusters, n_features)."""
     df = _make_df(100, d=5)
-    _, covs, _ = initialise_emissions(
-        df, n_clusters=2, random_state=42, covariance_type="diag"
-    )
+    _, covs, _ = initialise_emissions(df, n_clusters=2, random_state=42, covariance_type="diag")
     assert covs.shape == (2, 5)
 
 
 def test_diag_covariance_values_are_positive():
     """Diagonal covariance entries must all be positive."""
     df = _make_df(100, d=4)
-    _, covs, _ = initialise_emissions(
-        df, n_clusters=2, random_state=42, covariance_type="diag"
-    )
+    _, covs, _ = initialise_emissions(df, n_clusters=2, random_state=42, covariance_type="diag")
     assert (covs > 0).all()

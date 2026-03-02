@@ -54,12 +54,8 @@ class TestCheckCrossGroupCorrelation:
         )
         with caplog.at_level(logging.WARNING, logger="regime_ml"):
             _check_cross_group_correlation(df, "2015-01-01", warn_threshold=0.80)
-        warning_messages = [
-            r.message for r in caplog.records if r.levelno == logging.WARNING
-        ]
-        assert any("Cross-group" in m for m in warning_messages), (
-            "Expected a cross-group correlation warning"
-        )
+        warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("Cross-group" in m for m in warning_messages), "Expected a cross-group correlation warning"
 
     def test_uses_is_data_only(self, caplog):
         """Correlation is computed on IS rows only; OOS high correlation must not trigger warning."""
@@ -95,8 +91,6 @@ class TestCheckCrossGroupCorrelation:
     def test_returns_none_for_single_column(self):
         """Function returns None gracefully when only one PC column is present."""
         idx = pd.bdate_range("2000-01-03", periods=100)
-        df = pd.DataFrame(
-            {"rates_pc1": np.random.default_rng(0).standard_normal(100)}, index=idx
-        )
+        df = pd.DataFrame({"rates_pc1": np.random.default_rng(0).standard_normal(100)}, index=idx)
         result = _check_cross_group_correlation(df, "2005-01-01", warn_threshold=0.80)
         assert result is None

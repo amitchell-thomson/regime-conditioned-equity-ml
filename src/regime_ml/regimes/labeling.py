@@ -27,10 +27,7 @@ from regime_ml.data.macro import build_featuregroup_map
 logger = logging.getLogger(__name__)
 
 _GROUPS = ("rates", "inflation", "real_economy", "credit", "volatility")
-_DEFAULT_ARCHETYPES_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / "configs/regimes/regime_archetypes.yaml"
-)
+_DEFAULT_ARCHETYPES_PATH = Path(__file__).parent.parent.parent.parent / "configs/regimes/regime_archetypes.yaml"
 
 
 def _load_archetypes(path: Path | None = None) -> tuple[dict, float, float]:
@@ -44,8 +41,7 @@ def _load_archetypes(path: Path | None = None) -> tuple[dict, float, float]:
     cfg_path = Path(path) if path is not None else _DEFAULT_ARCHETYPES_PATH
     if not cfg_path.exists():
         raise FileNotFoundError(
-            f"regime_archetypes.yaml not found at {cfg_path}. "
-            "Create it or pass an explicit archetypes_path."
+            f"regime_archetypes.yaml not found at {cfg_path}. " "Create it or pass an explicit archetypes_path."
         )
     with open(cfg_path, "r") as fh:
         raw = yaml.safe_load(fh)
@@ -61,9 +57,7 @@ def _load_archetypes(path: Path | None = None) -> tuple[dict, float, float]:
     return archetypes, min_confidence, min_margin
 
 
-def _build_signature_matrix(
-    archetypes: dict, groups: tuple[str, ...]
-) -> tuple[np.ndarray, list[str], list[str]]:
+def _build_signature_matrix(archetypes: dict, groups: tuple[str, ...]) -> tuple[np.ndarray, list[str], list[str]]:
     """Build the (n_archetypes, n_groups) signature matrix.
 
     Returns:
@@ -74,18 +68,13 @@ def _build_signature_matrix(
     archetype_keys = list(archetypes.keys())
     display_names = [archetypes[k]["display_name"] for k in archetype_keys]
     A = np.array(
-        [
-            [float(archetypes[k]["signatures"].get(g, 0.0)) for g in groups]
-            for k in archetype_keys
-        ],
+        [[float(archetypes[k]["signatures"].get(g, 0.0)) for g in groups] for k in archetype_keys],
         dtype=float,
     )
     return A, archetype_keys, display_names
 
 
-def _cosine_similarity_matrix(
-    state_vecs: np.ndarray, archetype_vecs: np.ndarray
-) -> np.ndarray:
+def _cosine_similarity_matrix(state_vecs: np.ndarray, archetype_vecs: np.ndarray) -> np.ndarray:
     """Compute (n_states, n_archetypes) cosine similarity matrix.
 
     Both inputs are L2-normalised before computing the dot product so the
@@ -147,13 +136,9 @@ def label_regimes(
     T, d = X.shape
     T2, K = gamma.shape
     if T != T2:
-        raise ValueError(
-            f"X ({T} rows) and proba ({T2} rows) must align on time dimension."
-        )
+        raise ValueError(f"X ({T} rows) and proba ({T2} rows) must align on time dimension.")
     if len(feature_names) != d:
-        raise ValueError(
-            f"feature_names length {len(feature_names)} must match X columns {d}."
-        )
+        raise ValueError(f"feature_names length {len(feature_names)} must match X columns {d}.")
 
     # --- Weighted state means: mu_k (K, d)
     Nk = np.maximum(gamma.sum(axis=0), 1e-12)  # (K,)
@@ -183,22 +168,17 @@ def label_regimes(
     n_archetypes = len(archetype_keys)
     if n_archetypes >= K:
         row_ind, col_ind = linear_sum_assignment(-S)
-        assigned_archetype_idx = {
-            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
-        }
+        assigned_archetype_idx = {int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))}
     else:
         # More states than archetypes: assign greedily without repeat
         # (rare — archetype pool should always be > K)
         logger.warning(
-            "label_regimes: more HMM states (%d) than archetypes (%d). "
-            "Some states will be unclassified by design.",
+            "label_regimes: more HMM states (%d) than archetypes (%d). " "Some states will be unclassified by design.",
             K,
             n_archetypes,
         )
         row_ind, col_ind = linear_sum_assignment(-S[:, :n_archetypes])
-        assigned_archetype_idx = {
-            int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))
-        }
+        assigned_archetype_idx = {int(row_ind[i]): int(col_ind[i]) for i in range(len(row_ind))}
 
     # --- Build per-state label dicts
     results: list[dict[str, Any]] = []
@@ -207,11 +187,7 @@ def label_regimes(
         best_score = float(S[k, assigned_j]) if assigned_j is not None else -np.inf
 
         # Runner-up: best score among un-assigned archetypes
-        runner_up_j = int(
-            np.argmax(
-                [S[k, j] if j != assigned_j else -np.inf for j in range(n_archetypes)]
-            )
-        )
+        runner_up_j = int(np.argmax([S[k, j] if j != assigned_j else -np.inf for j in range(n_archetypes)]))
         runner_up_score = float(S[k, runner_up_j])
         margin = best_score - runner_up_score
 

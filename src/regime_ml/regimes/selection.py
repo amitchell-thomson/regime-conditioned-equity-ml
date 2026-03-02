@@ -13,9 +13,7 @@ def _get(d: Dict[str, Any], path: str, default=np.nan):
     return cur
 
 
-def _soft_score(
-    x: float, optimal: float, lo: float, hi: float, slack: float = 0.5
-) -> float:
+def _soft_score(x: float, optimal: float, lo: float, hi: float, slack: float = 0.5) -> float:
     """Score in [0, 1]. Returns 1.0 at optimal; decays linearly outward.
 
     Within [lo, hi]: linear gradient from 0.5 at the boundaries to 1.0 at optimal.
@@ -101,19 +99,11 @@ def select_best_hmm_model(
             {
                 "model_id": model_id,
                 # --- FULL sample
-                "tv_valid": bool(
-                    _get(r, "transition_matrix_sanity.tv_distance_valid", False)
-                ),
+                "tv_valid": bool(_get(r, "transition_matrix_sanity.tv_distance_valid", False)),
                 "tv20": _get(r, "transition_matrix_sanity.tv_distance"),
-                "max_implied_duration": _get(
-                    r, "transition_matrix_sanity.max_implied_duration"
-                ),
-                "median_implied_duration": _get(
-                    r, "transition_matrix_sanity.median_implied_duration"
-                ),
-                "max_offdiag": _get(
-                    r, "transition_matrix_sanity.max_offdiag_transition"
-                ),
+                "max_implied_duration": _get(r, "transition_matrix_sanity.max_implied_duration"),
+                "median_implied_duration": _get(r, "transition_matrix_sanity.median_implied_duration"),
+                "max_offdiag": _get(r, "transition_matrix_sanity.max_offdiag_transition"),
                 "min_exit_paths": _get(r, "transition_matrix_sanity.min_exit_paths"),
                 "min_share": _get(r, "regime_stability.min_regime_share"),
                 "max_share": _get(r, "regime_stability.max_regime_share"),
@@ -127,21 +117,11 @@ def select_best_hmm_model(
                 # based on the same data the model was fitted on.
                 "bic_is": _get(r, "bic_is"),
                 # --- OOS slice (structural robustness)
-                "oos_min_share": _get(
-                    r, "out_of_sample.regime_stability.min_regime_share"
-                ),
-                "oos_max_share": _get(
-                    r, "out_of_sample.regime_stability.max_regime_share"
-                ),
-                "oos_n_transitions": _get(
-                    r, "out_of_sample.regime_stability.n_transitions"
-                ),
-                "oos_avg_persistence": _get(
-                    r, "out_of_sample.regime_stability.avg_persistence"
-                ),
-                "oos_anova_r2_mean": _get(
-                    r, "out_of_sample.macro_coherence.anova_r2_mean"
-                ),
+                "oos_min_share": _get(r, "out_of_sample.regime_stability.min_regime_share"),
+                "oos_max_share": _get(r, "out_of_sample.regime_stability.max_regime_share"),
+                "oos_n_transitions": _get(r, "out_of_sample.regime_stability.n_transitions"),
+                "oos_avg_persistence": _get(r, "out_of_sample.regime_stability.avg_persistence"),
+                "oos_anova_r2_mean": _get(r, "out_of_sample.macro_coherence.anova_r2_mean"),
             }
         )
 
@@ -219,9 +199,7 @@ def select_best_hmm_model(
 
     survivors = df[keep_mask].copy()
     rejected_df = (
-        pd.DataFrame(rej).sort_values(["reason", "model_id"])
-        if rej
-        else pd.DataFrame(columns=["model_id", "reason"])
+        pd.DataFrame(rej).sort_values(["reason", "model_id"]) if rej else pd.DataFrame(columns=["model_id", "reason"])
     )  # type: ignore[arg-type]  # sort_values returns DataFrame but chain typing not narrowed
 
     if survivors.empty:
@@ -245,9 +223,7 @@ def select_best_hmm_model(
         "anova": {"optimal": 0.35, "lo": 0.10, "hi": 0.60, "slack": 0.5},
     }
     _cfg_ss: Dict[str, Any] = soft_score_cfg or {}
-    ss: Dict[str, Any] = {
-        k: {**_default_ss[k], **_cfg_ss.get(k, {})} for k in _default_ss
-    }
+    ss: Dict[str, Any] = {k: {**_default_ss[k], **_cfg_ss.get(k, {})} for k in _default_ss}
 
     # --- Scoring
     # Percentile rank: maps a Series to [0,1] where higher rank = better model.
@@ -263,9 +239,7 @@ def select_best_hmm_model(
     # and would rank 1st even when a 4-regime model is equally good in absolute
     # terms. BIC (not rank) should be the primary n_regimes discriminator.
     maha_score = survivors["maha_median"].apply(lambda x: _soft_score(x, **ss["maha"]))
-    anova_score = survivors["anova_r2_mean"].apply(
-        lambda x: _soft_score(x, **ss["anova"])
-    )
+    anova_score = survivors["anova_r2_mean"].apply(lambda x: _soft_score(x, **ss["anova"]))
     macro = 0.5 * maha_score + 0.5 * anova_score
 
     # Transition realism: prefer durations ~90 days (4-5 months), not too short/long
@@ -278,16 +252,12 @@ def select_best_hmm_model(
         if survivors["tv20"].notna().any()
         else 0.0
     )
-    off_pen = rrank(
-        survivors["max_offdiag"], ascending=False
-    )  # lower offdiag => higher rank
+    off_pen = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
     trans = 0.45 * dur_score + 0.35 * tv_score + 0.20 * off_pen
 
     # Stability: less churn, decent persistence (~90 days), not overly certain
     churn = rrank(survivors["n_transitions"], ascending=False)
-    pers = survivors["avg_persistence"].apply(  # type: ignore[arg-type]
-        lambda x: _soft_score(x, **ss["persistence"])
-    )
+    pers = survivors["avg_persistence"].apply(lambda x: _soft_score(x, **ss["persistence"]))  # type: ignore[arg-type]
     ent = rrank(survivors["entropy_mean"], ascending=True)
     stab = 0.45 * churn + 0.35 * pers + 0.20 * ent
 
@@ -305,9 +275,7 @@ def select_best_hmm_model(
     if bic_vals.notna().any():  # type: ignore[union-attr]  # pandas Series notna().any() — mypy cannot narrow type
         bic_min, bic_max = float(bic_vals.min()), float(bic_vals.max())
         bic_score: pd.Series | float = (
-            (bic_max - bic_vals) / (bic_max - bic_min)
-            if bic_max > bic_min
-            else pd.Series(1.0, index=survivors.index)
+            (bic_max - bic_vals) / (bic_max - bic_min) if bic_max > bic_min else pd.Series(1.0, index=survivors.index)
         )
     else:
         bic_score = 0.0
@@ -327,9 +295,7 @@ def select_best_hmm_model(
     )
 
     leaderboard = (
-        survivors.sort_values("final_score", ascending=False)
-        .head(top_n)
-        .reset_index(drop=True)
+        survivors.sort_values("final_score", ascending=False).head(top_n).reset_index(drop=True)
     )  # type: ignore[assignment]  # pandas method chain returns DataFrame — mypy cannot narrow
     best_model_id = str(leaderboard.loc[0, "model_id"])
 

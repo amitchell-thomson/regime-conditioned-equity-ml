@@ -71,9 +71,7 @@ def _fit_grid(
     feature_names = list(df_is.columns)
     models: Dict[str, Dict[str, Any]] = {}
 
-    for idx, (n_regimes, cov_type, p_stay) in enumerate(
-        product(n_regimes_list, cov_types, p_stay_list)
-    ):
+    for idx, (n_regimes, cov_type, p_stay) in enumerate(product(n_regimes_list, cov_types, p_stay_list)):
         model_id = f"model_{idx}"
         logger.info(
             "_fit_grid: fitting %s (n_regimes=%d, cov=%s, p_stay=%.2f)",
@@ -103,14 +101,10 @@ def _fit_grid(
                 "p_stay": p_stay,
             }
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "_fit_grid: %s failed — %s: %s", model_id, type(exc).__name__, exc
-            )
+            logger.warning("_fit_grid: %s failed — %s: %s", model_id, type(exc).__name__, exc)
 
     if not models:
-        raise RuntimeError(
-            "_fit_grid: all grid configurations failed. Check features and HMM config."
-        )
+        raise RuntimeError("_fit_grid: all grid configurations failed. Check features and HMM config.")
     logger.info(
         "_fit_grid: %d/%d configs fitted successfully.",
         len(models),
@@ -152,14 +146,10 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     sel_filters: dict = regime_cfg.get("selection", {}).get("filters", {})
 
     # --- 1. Load features
-    features_path = _resolve(
-        outputs_cfg.get("features_path", "data/features/macro_features_ready.parquet")
-    )
+    features_path = _resolve(outputs_cfg.get("features_path", "data/features/macro_features_ready.parquet"))
     logger.info("run_regime_pipeline: loading features from %s", features_path)
     if not features_path.exists():
-        raise FileNotFoundError(
-            f"Features file not found: {features_path}. Run 'regime-ml features' first."
-        )
+        raise FileNotFoundError(f"Features file not found: {features_path}. Run 'regime-ml features' first.")
     features_df = pd.read_parquet(features_path)
     logger.info(
         "run_regime_pipeline: features shape %s, columns: %s",
@@ -168,9 +158,9 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     )
 
     # SHA-256 fingerprint of the feature data — changes if upstream FRED data is updated.
-    features_hash = hashlib.sha256(
-        pd.util.hash_pandas_object(features_df, index=True).values.tobytes()
-    ).hexdigest()[:16]
+    features_hash = hashlib.sha256(pd.util.hash_pandas_object(features_df, index=True).values.tobytes()).hexdigest()[
+        :16
+    ]
     logger.info("run_regime_pipeline: features_hash=%s", features_hash)
 
     feature_names = list(features_df.columns)
@@ -179,8 +169,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     df_is = features_df[features_df.index <= train_end_date]
     if len(df_is) < 100:
         raise ValueError(
-            f"In-sample period contains only {len(df_is)} rows. "
-            "Check train_end_date in regime_config.yaml."
+            f"In-sample period contains only {len(df_is)} rows. " "Check train_end_date in regime_config.yaml."
         )
     logger.info(
         "run_regime_pipeline: IS=%d rows (%s → %s), OOS=%d rows",
@@ -202,11 +191,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         "max_implied_duration": "max_implied_duration",
         "min_exit_paths": "min_exit_paths_required",
     }
-    filter_kwargs = {
-        kwarg: sel_filters[key]
-        for key, kwarg in _filter_kwarg_map.items()
-        if key in sel_filters
-    }
+    filter_kwargs = {kwarg: sel_filters[key] for key, kwarg in _filter_kwarg_map.items() if key in sel_filters}
 
     # 5a. Initial selection without churn_rejected_ids to identify structural survivors.
     # This gives us the pool of models that passed degeneracy, dead-regime, and duration
@@ -255,9 +240,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
             )
             if cv_result.get("churn_hard_reject", False):
                 churn_rejected_ids.add(cand_id)
-                logger.warning(
-                    "run_regime_pipeline: %s hard-rejected by CV churn filter.", cand_id
-                )
+                logger.warning("run_regime_pipeline: %s hard-rejected by CV churn filter.", cand_id)
 
     # 5c. Final selection with churn_rejected_ids applied as a hard filter.
     # Models that exceeded the CV churn threshold are rejected outright — high label
@@ -320,17 +303,11 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
     # --- 8. Episode validation
     episodes_path = _PROJECT_ROOT / "configs/regimes/economic_episodes.yaml"
     try:
-        episode_df = validate_against_episodes(
-            regime_series, label_results, episodes_path
-        )
+        episode_df = validate_against_episodes(regime_series, label_results, episodes_path)
         # Exclude episodes with no data overlap (e.g. pre-dataset history).
         # Counting them as failures inflates the miss rate against an unreachable target.
-        reachable = (
-            episode_df[episode_df["n_days"] > 0] if not episode_df.empty else episode_df
-        )
-        n_matched_episodes = (
-            int(reachable["archetype_match"].sum()) if not reachable.empty else 0
-        )
+        reachable = episode_df[episode_df["n_days"] > 0] if not episode_df.empty else episode_df
+        n_matched_episodes = int(reachable["archetype_match"].sum()) if not reachable.empty else 0
         n_episodes = len(reachable)
         logger.info(
             "run_regime_pipeline: episode validation — %d/%d matched.",
@@ -338,9 +315,7 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
             n_episodes,
         )
     except FileNotFoundError:
-        logger.warning(
-            "run_regime_pipeline: economic_episodes.yaml not found — skipping episode validation."
-        )
+        logger.warning("run_regime_pipeline: economic_episodes.yaml not found — skipping episode validation.")
         episode_df = pd.DataFrame()
         n_matched_episodes = 0
         n_episodes = 0
@@ -399,23 +374,13 @@ def run_regime_pipeline(log_dir: Path | None = None) -> Dict[str, Any]:
         )
 
     # --- 11. Save outputs
-    out_dir = _resolve(
-        outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")
-    ).parent
+    out_dir = _resolve(outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    assignments_path = _resolve(
-        outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet")
-    )
-    leaderboard_path = _resolve(
-        outputs_cfg.get("model_leaderboard", "data/regimes/model_leaderboard.csv")
-    )
-    label_path = _resolve(
-        outputs_cfg.get("label_results", "data/regimes/label_results.json")
-    )
-    metadata_path = _resolve(
-        outputs_cfg.get("run_metadata", "data/regimes/run_metadata.json")
-    )
+    assignments_path = _resolve(outputs_cfg.get("regime_assignments", "data/regimes/regime_assignments.parquet"))
+    leaderboard_path = _resolve(outputs_cfg.get("model_leaderboard", "data/regimes/model_leaderboard.csv"))
+    label_path = _resolve(outputs_cfg.get("label_results", "data/regimes/label_results.json"))
+    metadata_path = _resolve(outputs_cfg.get("run_metadata", "data/regimes/run_metadata.json"))
 
     # Persist the best model parameters so Phase 3 can load without re-fitting.
     best_model_path = _resolve(outputs_cfg.get("best_model", "data/regimes/best_model"))
