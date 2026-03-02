@@ -3,7 +3,69 @@
 import numpy as np
 import pytest
 
-from regime_ml.regimes.selection import _soft_score
+from regime_ml.regimes.selection import _soft_score, select_best_hmm_model
+
+
+# ---------------------------------------------------------------------------
+# Shared fixture factory for transition-score tests
+# ---------------------------------------------------------------------------
+
+
+def _make_result_with_tv20(tv20: float, bic: float = 8000.0) -> dict:
+    """Minimal compare_hmm_models()-style result dict, tv20 controllable."""
+    return {
+        "bic_is": bic,
+        "aic_is": bic,
+        "regime_stability": {
+            "avg_persistence": 90.0,
+            "std_persistence": 20.0,
+            "n_transitions": 50,
+            "regime_entropy": 1.5,
+            "regime_counts": {0: 500, 1: 500},
+            "min_regime_share": 0.10,
+            "max_regime_share": 0.50,
+        },
+        "entropy_balance": {"entropy_balance": 1.5},
+        "transition_matrix_sanity": {
+            "median_implied_duration": 90.0,
+            "max_implied_duration": 200.0,
+            "mean_self_transition": 0.95,
+            "max_offdiag_transition": 0.05,
+            "mean_row_entropy": 0.3,
+            "tv_distance_valid": True,
+            "tv_distance": tv20,
+            "min_exit_paths": 2,
+        },
+        "macro_coherence": {
+            "maha_min": 2.0,
+            "maha_median": 2.5,
+            "maha_mean": 2.5,
+            "anova_r2_mean": 0.35,
+            "anova_r2_median": 0.35,
+            "anova_group_r2": {},
+            "anova_top_features": [],
+        },
+        "in_sample": {
+            "regime_stability": {
+                "min_regime_share": 0.10,
+                "max_regime_share": 0.50,
+                "avg_persistence": 90.0,
+                "n_transitions": 40,
+            },
+            "entropy_balance": {"entropy_balance": 1.5},
+            "macro_coherence": {"anova_r2_mean": 0.35},
+        },
+        "out_of_sample": {
+            "regime_stability": {
+                "min_regime_share": 0.10,
+                "max_regime_share": 0.50,
+                "avg_persistence": 90.0,
+                "n_transitions": 10,
+            },
+            "entropy_balance": {"entropy_balance": 1.5},
+            "macro_coherence": {"anova_r2_mean": 0.30},
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -120,4 +182,69 @@ class TestSoftScore:
         assert score_closer > score_farther, (
             "Model closer to optimal should score higher than one farther from it "
             "even when both are inside [lo, hi]."
+        )
+
+
+# ---------------------------------------------------------------------------
+# TV-20 removal regression: transition_score must be independent of tv20
+# ---------------------------------------------------------------------------
+
+
+class TestTransitionScoreNoTV:
+    """tv_score was removed from the transition formula because the TV-20 mixing
+    distance at p_stay in [0.93, 0.99] is 0.47-0.65 — well above the former
+    hi=0.30 threshold, producing score=0.0 for every model in the grid.
+
+    After the fix, transition_score = 0.65 * dur_score + 0.35 * off_pen.
+    Changing tv20 while keeping all other model properties fixed must NOT
+    change the transition_score.
+    """
+
+    def _run(self, tv20: float) -> float:
+        results = {
+            "model_A": _make_result_with_tv20(tv20, bic=8000.0),
+            "model_B": _make_result_with_tv20(tv20, bic=8001.0),
+        }
+        _, lb, _ = select_best_hmm_model(results, churn_rejected_ids=None)
+        return float(lb.loc[lb["model_id"] == "model_A", "transition_score"].iloc[0])
+
+    def test_low_tv20_same_transition_score_as_high_tv20(self):
+        """A tv20 of 0.10 (formerly inside thresholds) and 0.65 (outside) must
+        both yield the same transition_score — tv_score no longer contributes."""
+        score_low = self._run(tv20=0.10)
+        score_high = self._run(tv20=0.65)
+        assert score_low == pytest.approx(score_high, abs=1e-9), (
+            f"transition_score differs between tv20=0.10 ({score_low:.6f}) and "
+            f"tv20=0.65 ({score_high:.6f}). tv20 must not affect transition_score."
+        )
+
+    def test_extreme_tv20_does_not_change_transition_score(self):
+        """tv20=0.0 and tv20=0.99 should produce identical transition_scores."""
+        score_zero = self._run(tv20=0.0)
+        score_max = self._run(tv20=0.99)
+        assert score_zero == pytest.approx(score_max, abs=1e-9), (
+            "Extreme tv20 values should not affect transition_score."
+        )
+
+    def test_transition_score_column_present_in_leaderboard(self):
+        """transition_score column must still exist in the leaderboard output."""
+        results = {
+            "model_A": _make_result_with_tv20(0.55, bic=8000.0),
+            "model_B": _make_result_with_tv20(0.60, bic=8001.0),
+        }
+        _, lb, _ = select_best_hmm_model(results, churn_rejected_ids=None)
+        assert "transition_score" in lb.columns, (
+            "transition_score column must be present in leaderboard."
+        )
+
+    def test_transition_score_is_positive(self):
+        """transition_score must be > 0 for a model with typical dur and offdiag values."""
+        results = {
+            "model_A": _make_result_with_tv20(0.55, bic=8000.0),
+            "model_B": _make_result_with_tv20(0.55, bic=8001.0),
+        }
+        _, lb, _ = select_best_hmm_model(results, churn_rejected_ids=None)
+        ts = float(lb.loc[lb["model_id"] == "model_A", "transition_score"].iloc[0])
+        assert ts > 0.0, (
+            f"transition_score should be positive for a well-behaved model; got {ts}"
         )

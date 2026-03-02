@@ -6,6 +6,7 @@ regime_universe:
   raw_path: "data/raw/macro_raw.parquet"
   processed_path: "data/processed/macro_processed.parquet"
   raw_features_path: "data/features/macro_features_raw.parquet"
+  feature_metadata_path: "data/features/feature_metadata.yaml"
   ready_features_path: "data/features/macro_features_ready.parquet"
   pca_loadings_dir: "data/features/pca_loadings"
 
@@ -16,9 +17,9 @@ regime_universe:
   # Maximum days a forward-filled value is considered valid, by native frequency.
   # After this many calendar days without a new observation, value is set to NaN.
   max_staleness_days:
-    daily: 5        # >1 week stale -> NaN (handles weekends + short FRED outages)
-    weekly: 21      # >3 weeks -> NaN
-    monthly: 65     # >~2 months -> NaN (catches discontinued series)
+    daily: 5 # >1 week stale -> NaN (handles weekends + short FRED outages)
+    weekly: 21 # >3 weeks -> NaN
+    monthly: 65 # >~2 months -> NaN (catches discontinued series)
     irregular: 65
     unknown: 65
 
@@ -26,9 +27,10 @@ regime_universe:
   # ALFRED eliminates publication-lag and revision lookahead bias by using values
   # as they were known on each date. Routing is controlled per-series via use_alfred.
   alfred:
-    use_alfred: false     # Global fallback for series without an explicit use_alfred override.
-                          # All configured series define use_alfred explicitly; this is a
-                          # safety net for any future series added without a flag.
+    use_alfred:
+      false # Global fallback for series without an explicit use_alfred override.
+      # All configured series define use_alfred explicitly; this is a
+      # safety net for any future series added without a flag.
 
   # Global transform defaults.
   # winsorize_sigma: symmetric clip bound applied after z-score for fat-tailed series.
@@ -49,46 +51,46 @@ regime_universe:
     # ============================
     fedfunds:
       id: FEDFUNDS
-      use_alfred: false     # Effective rate published next business day; minimal revision
+      use_alfred: false # Effective rate published next business day; minimal revision
       category: rates
       frequency: daily
       name: "Federal Funds Rate"
       description: "Primary US monetary policy rate; anchors the short end of the yield curve."
       transforms:
-        - [level, {z_score: {window: 36}}]                             # Policy stance level
-        - [{diff: {periods: 6}}, {z_score: {window: 36}}]              # Hiking/cutting cycle magnitude
+        - [level, { z_score: { window: 36 } }] # Policy stance level
+        - [{ diff: { periods: 6 } }, { z_score: { window: 36 } }] # Hiking/cutting cycle magnitude
 
     ust10y:
       id: DGS10
-      use_alfred: false     # Market-quoted daily data; FRED never revises it
+      use_alfred: false # Market-quoted daily data; FRED never revises it
       category: rates
       frequency: daily
       name: "10Y Treasury yield"
       description: "Benchmark long-term nominal rate; growth/inflation/term-premium mix."
       transforms:
-        - [level, {z_score: {window: 252}}]                             # Long-term rate level
-        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Medium-term rate shift
+        - [level, { z_score: { window: 252 } }] # Long-term rate level
+        - [{ diff: { periods: 63 } }, { z_score: { window: 252 } }] # Medium-term rate shift
 
     yc_10_2y:
       id: T10Y2Y
-      use_alfred: false     # Market-quoted daily spread; no revision
+      use_alfred: false # Market-quoted daily spread; no revision
       category: rates
       frequency: daily
       name: "10Y-2Y yield curve slope"
       description: "Classic recession indicator; captures near-to-long rate differential."
       transforms:
-        - [level, {z_score: {window: 252}}]                             # Curve slope level
+        - [level, { z_score: { window: 252 } }] # Curve slope level
 
     yc_10_3m:
       id: T10Y3M
-      use_alfred: false     # Market-quoted daily spread
+      use_alfred: false # Market-quoted daily spread
       category: rates
       frequency: daily
       name: "10Y-3M yield curve slope"
       description: "Strongest recession predictor; captures policy-rate-to-long-end differential."
       transforms:
-        - [level, {z_score: {window: 252}}]                             # Curve slope level
-        - [{diff: {periods: 63}}, {z_score: {window: 252}}]            # Steepening/flattening trend
+        - [level, { z_score: { window: 252 } }] # Curve slope level
+        - [{ diff: { periods: 63 } }, { z_score: { window: 252 } }] # Steepening/flattening trend
 
     # ============================
     # Inflation: Realised
@@ -102,13 +104,16 @@ regime_universe:
     # ============================
     cpi_headline:
       id: CPIAUCSL
-      use_alfred: true      # BLS release; headline CPI subject to methodological revisions
+      use_alfred: true # BLS release; headline CPI subject to methodological revisions
       category: inflation
       frequency: monthly
       name: "Headline CPI (all urban consumers)"
       description: "Broad consumer price level; the primary market-focal inflation benchmark."
       transforms:
-        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # YoY inflation rate
+        - [
+            { yoy: { periods: 12, method: pct_change } },
+            { z_score: { window: 36 } },
+          ] # YoY inflation rate
 
     # ============================
     # Real Economy (merged growth + employment into one group)
@@ -125,56 +130,66 @@ regime_universe:
     # ============================
     cfnai:
       id: CFNAI
-      use_alfred: false      # Composite index; heavily revised in first 1-2 years after release
+      use_alfred: false # Composite index; heavily revised in first 1-2 years after release
       category: real_economy
       frequency: monthly
       name: "Chicago Fed National Activity Index"
       description: "85-indicator composite of national economic activity; designed for business-cycle detection."
       transforms:
-        - [level, {z_score: {window: 36}}]                              # Activity level
-        - [{diff: {periods: 3}}, {z_score: {window: 36}}]              # Medium-term momentum
+        - [level, { z_score: { window: 36 } }] # Activity level
+        - [{ diff: { periods: 3 } }, { z_score: { window: 36 } }] # Medium-term momentum
 
     indpro:
       id: INDPRO
-      use_alfred: true      # Fed statistical release; subject to benchmark revisions
+      use_alfred: true # Fed statistical release; subject to benchmark revisions
       category: real_economy
       frequency: monthly
       name: "Industrial Production Index"
       description: "Manufacturing and mining output; high-frequency cyclical activity measure."
       transforms:
-        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # YoY industrial growth
+        - [
+            { yoy: { periods: 12, method: pct_change } },
+            { z_score: { window: 36 } },
+          ] # YoY industrial growth
 
     jobless_claims:
       id: ICSA
-      use_alfred: false      # DOL administrative data; revised weekly with seasonal adjustment changes
+      use_alfred: false # DOL administrative data; revised weekly with seasonal adjustment changes
       category: real_economy
       frequency: weekly
       name: "Initial jobless claims"
       description: "Leading labour stress indicator; high-frequency signal of layoff activity."
       transforms:
-        - [{ma: {window: 4}}, {z_score: {window: 50}}]                               # Smoothed level
-        - [{ma: {window: 4}}, {pct_change: {periods: 13}}, {z_score: {window: 50}}]  # Quarterly deterioration
+        - [{ ma: { window: 4 } }, { z_score: { window: 50 } }] # Smoothed level
+        - [
+            { ma: { window: 4 } },
+            { pct_change: { periods: 13 } },
+            { z_score: { window: 50 } },
+          ] # Quarterly deterioration
 
     unemployment:
       id: UNRATE
-      use_alfred: true      # BLS; revised with annual benchmarks and seasonal adjustment
+      use_alfred: true # BLS; revised with annual benchmarks and seasonal adjustment
       category: real_economy
       frequency: monthly
       name: "Unemployment rate"
       description: "Headline lagging labour market indicator; regime-confirming cyclical benchmark."
       transforms:
-        - [level, {z_score: {window: 36}}]                              # Unemployment level
-        - [{diff: {periods: 3}}, {z_score: {window: 36}}]              # Sahm-style 3-month change
+        - [level, { z_score: { window: 36 } }] # Unemployment level
+        - [{ diff: { periods: 3 } }, { z_score: { window: 36 } }] # Sahm-style 3-month change
 
     nonfarm_payrolls:
       id: PAYEMS
-      use_alfred: true      # BLS; large initial revisions common at turning points
+      use_alfred: true # BLS; large initial revisions common at turning points
       category: real_economy
       frequency: monthly
       name: "Nonfarm payroll employment"
       description: "Core employment growth signal; primary Jobs Report headline."
       transforms:
-        - [{yoy: {periods: 12, method: pct_change}}, {z_score: {window: 36}}]   # Annual employment trend
+        - [
+            { yoy: { periods: 12, method: pct_change } },
+            { z_score: { window: 36 } },
+          ] # Annual employment trend
 
     # ============================
     # Credit & Financial Conditions
@@ -191,24 +206,28 @@ regime_universe:
     # ============================
     nfci:
       id: NFCI
-      use_alfred: false      # Composite index; subject to methodology revisions
+      use_alfred: false # Composite index; subject to methodology revisions
       category: credit
       frequency: weekly
       name: "Chicago Fed National Financial Conditions Index"
       description: "Broad financial conditions/stress composite; captures tightening/loosening of credit and funding."
       transforms:
-        - [level, {z_score: {window: 50}}, {winsorize: {sigma: 4.0}}]                              # Current financial conditions
-        - [{diff: {periods: 21}}, {z_score: {window: 50}}, {winsorize: {sigma: 4.0}}]              # Tightening/loosening rate
+        - [level, { z_score: { window: 50 } }, { winsorize: { sigma: 4.0 } }] # Current financial conditions
+        - [
+            { diff: { periods: 21 } },
+            { z_score: { window: 50 } },
+            { winsorize: { sigma: 4.0 } },
+          ] # Tightening/loosening rate
 
     baa10y_spread:
       id: BAA10Y
-      use_alfred: false     # Market-quoted spread; no revision
+      use_alfred: false # Market-quoted spread; no revision
       category: credit
       frequency: daily
       name: "BAA-10Y credit spread"
       description: "Investment-grade credit stress proxy; widens during risk-off and funding stress."
       transforms:
-        - [level, {z_score: {window: 252}}]                             # Credit stress level
+        - [level, { z_score: { window: 252 } }] # Credit stress level
 
     # ============================
     # Volatility
@@ -221,10 +240,10 @@ regime_universe:
     # ============================
     vix:
       id: VIXCLS
-      use_alfred: false     # Market-quoted daily data; FRED never revises it
+      use_alfred: false # Market-quoted daily data; FRED never revises it
       category: volatility
       frequency: daily
       name: "CBOE Volatility Index"
       description: "Market-implied equity volatility; proxy for fear, convexity demand, and risk-off stress."
       transforms:
-        - [level, {z_score: {window: 126}}, {winsorize: {sigma: 4.0}}]  # Absolute stress level (clipped at 4σ)
+        - [level, { z_score: { window: 126 } }, { winsorize: { sigma: 4.0 } }] # Absolute stress level (clipped at 4σ)

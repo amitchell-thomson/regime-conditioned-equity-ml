@@ -247,13 +247,12 @@ def select_best_hmm_model(
     dur_score = survivors["median_implied_duration"].apply(  # type: ignore[arg-type]
         lambda x: _soft_score(x, **ss["duration"])
     )
-    tv_score = (
-        survivors["tv20"].apply(lambda x: _soft_score(x, **ss["turnover"]))  # type: ignore[arg-type]
-        if survivors["tv20"].notna().any()
-        else 0.0
-    )
+    # tv_score removed: TV-20 thresholds (optimal=0.15, hi=0.30) are incompatible with
+    # actual values (0.47-0.65 at p_stay in [0.93,0.99]), producing zero for every model.
+    # TV-20 already contributes as a hard filter via tv_distance_valid; soft scoring is
+    # ineffective here. Weight redistributed: dur_score 0.45→0.65, off_pen 0.20→0.35.
     off_pen = rrank(survivors["max_offdiag"], ascending=False)  # lower offdiag => higher rank
-    trans = 0.45 * dur_score + 0.35 * tv_score + 0.20 * off_pen
+    trans = 0.65 * dur_score + 0.35 * off_pen
 
     # Stability: less churn, decent persistence (~90 days), not overly certain
     churn = rrank(survivors["n_transitions"], ascending=False)

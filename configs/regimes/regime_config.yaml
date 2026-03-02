@@ -55,17 +55,17 @@ selection:
   filters:
     max_implied_duration: 1500.0 # hard ceiling only for near-absorbing states; soft score penalises >150d
     min_exit_paths: 1 # reject truly absorbing states (0 exits); 1-exit cascades penalised in transition score
+  # NOTE: turnover (TV-20) is intentionally absent from soft_score. TV-20 values at
+  # p_stay in [0.93,0.99] are 0.47-0.65 — incompatible with the former hi=0.30 threshold,
+  # which produced score=0.0 for every model. TV-20 is already a hard filter via
+  # tv_distance_valid in evaluation.py. Transition formula:
+  #   trans = 0.65 * dur_score + 0.35 * off_pen  (no tv_score term)
   soft_score:
     duration:
       optimal: 65.0 # Preferred median implied duration (days, ~4-5 months)
       lo: 20.0 # Lower acceptable bound
       hi: 150.0 # Upper acceptable bound
       slack: 0.5 # Decay rate beyond bounds (fraction of hi-lo)
-    turnover:
-      optimal: 0.15 # Preferred 20-day total-variation distance
-      lo: 0.05
-      hi: 0.30
-      slack: 1.0
     persistence:
       optimal: 90.0 # Preferred average regime persistence (days)
       lo: 20.0
@@ -107,7 +107,6 @@ cross_validation:
 # Output file paths (relative to project root).
 outputs:
   features_path: "data/features/macro_features_ready.parquet"
-  feature_metadata: "data/features/feature_metadata.yaml"
   regime_assignments: "data/regimes/regime_assignments.parquet"
   model_leaderboard: "data/regimes/model_leaderboard.csv"
   label_results: "data/regimes/label_results.json"

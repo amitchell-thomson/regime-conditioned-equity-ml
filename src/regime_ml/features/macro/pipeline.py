@@ -15,22 +15,22 @@ Key behaviors:
 """
 
 import logging
+from pathlib import Path
+
 import pandas as pd
 import yaml
 
-from pathlib import Path
-
+from regime_ml.data.common.loaders import load_dataframe
+from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 from regime_ml.features.common.transform_parser import TransformParser
+from regime_ml.features.macro.selection import select_features
 from regime_ml.features.macro.validator import validate_macro_features
 from regime_ml.utils.config import load_configs
-from regime_ml.data.common.loaders import load_dataframe
-from regime_ml.features.macro.selection import select_features
-from regime_ml.data.macro.build_featuregroup_map import build_featuregroup_map
 
 logger = logging.getLogger(__name__)
 
 
-def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None:
+def create_feature_metadata(features: pd.DataFrame, frequency_map: dict, outpath) -> None:
     feature_metadata = []
     for col in features.columns:
         # Parse feature name
@@ -52,7 +52,7 @@ def create_feature_metadata(features: pd.DataFrame, frequency_map: dict) -> None
         )
 
     # Save as YAML or JSON
-    with open("data/features/feature_metadata.yaml", "w") as f:
+    with open(outpath, "w") as f:
         yaml.dump({"features": feature_metadata, "n_features": len(feature_metadata)}, f)
 
     logger.info("Created metadata for %d features", len(feature_metadata))
@@ -89,6 +89,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     cfg = load_configs()
     regime_cfg = cfg["macro_data"]["regime_universe"]
     processed_path = regime_cfg["processed_path"]
+    feature_metadata_path = regime_cfg["feature_metadata_path"]
 
     # Load processed macro data
     # Expected format: columns=['date', 'series_code', 'value', 'is_new_data']
@@ -208,7 +209,7 @@ def run_macro_feature_pipeline() -> pd.DataFrame:
     logger.info("Saved PCA loadings to: %s", loadings_dir)
 
     # Create feature metadata (based on PC columns). Return value unused.
-    _ = create_feature_metadata(pc_features, frequency_map)
+    _ = create_feature_metadata(pc_features, frequency_map, feature_metadata_path)
 
     return feature_data
 
