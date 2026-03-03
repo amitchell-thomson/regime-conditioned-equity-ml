@@ -23,9 +23,9 @@ hmm:
 # primary target; 5 may better separate Liquidity Crisis from Policy Tightening.
 # p_stay: [0.93, 0.95, 0.97, 0.99] — extended range to let BIC compare stickiness.
 hmm_grid:
-  n_regimes: [3, 4, 5]
+  n_regimes: [4, 5]
   covariance_types: ["full"]
-  p_stay: [0.93, 0.95, 0.97, 0.99]
+  p_stay: [0.95, 0.97, 0.99]
 
 # Soft scoring weights and soft-score parameters for select_best_hmm_model().
 # Must sum to 1.0. Adjust here — never in source code.
@@ -99,7 +99,7 @@ cross_validation:
   hard_filter:
     max_churn: 0.65 # reject model if label_churn > this (hard rejection, not soft)
     min_cv_folds: 4 # reject model if fewer than this many folds complete
-  min_train_years: 5
+  min_train_years: 8
   fold_step_months: 12
   oos_window_months: 12
   max_churn_warning: 0.20 # log WARNING if label_churn > this (diagnostic only)

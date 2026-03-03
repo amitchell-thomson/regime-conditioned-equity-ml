@@ -7,20 +7,20 @@
 # ANALYSIS ONLY — this file is never read in the fitting path or trading logic.
 # expected_archetype must match a key in regime_archetypes.yaml.
 #
-# Active archetype keys in the current 5-state model:
-#   expansion           — broad-based expansion
-#   recovery            — post-crisis recovery: steep curve, healing labour, subdued inflation
-#   policy_constrained  — Fed tightening cycle, inverted curve, elevated inflation
-#   slowdown            — late-cycle disinflation: falling inflation + stagnant growth + intact labour
-#   liquidity_crisis    — extreme financial stress: employment collapse + emergency cuts
+# Pool routing: the active archetype pool depends on the winning model's n_regimes.
+#   K <= 3  → n3 pool (risk_on / contraction / crisis)
+#   K == 4  → n4 pool (risk_on / contraction / inflation_policy / crisis)
+#   K >= 5  → canonical pool (all 7 archetypes)
 #
-# Unused canonical archetypes (7 total, 5-state model selects 5 via linear assignment):
-#   recession           — no dedicated recession state in current 5-state fit
-#   stagflation         — no dedicated stagflation state in current 5-state fit
+# Episodes are written in canonical archetype space. validate_against_episodes() translates
+# to the winning model's pool via taxonomy.canonical_to_coarse in regime_archetypes.yaml:
+#   expansion / recovery           → risk_on          (n3, n4)
+#   slowdown / recession           → contraction      (n3, n4)
+#   stagflation / policy_constrained → inflation_policy (n4 only; → contraction in n3)
+#   liquidity_crisis               → crisis           (n3, n4)
 #
-# Episodes expecting unused archetypes (e.g. recession) will report match_status="not_in_model"
-# and are excluded from the applicable match count. Use the pipeline diagnostics to review
-# whether those periods are correctly captured under a nearby archetype (e.g. slowdown).
+# If a translated key is not assigned to any HMM state (e.g. a state is unclassified),
+# that episode reports match_status="not_in_model" and is excluded from the applicable count.
 
 episodes:
   - name: "Dot-com Bust"

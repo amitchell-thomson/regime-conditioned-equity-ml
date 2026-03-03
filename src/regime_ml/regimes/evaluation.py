@@ -664,7 +664,38 @@ def expanding_window_cv(
     fold_diag_means: list[float] = []  # mean(diag(transmat)) per fold
     fold_state_shares: list[Dict[int, float]] = []  # {state: OOS share} per fold
     nontrivial_perm_count: int = 0
-    ref_detector = None
+
+    # Fit reference model on full IS window for stable, consistent state alignment.
+    # Using the production model (all IS data up to train_end_date) as the reference
+    # ensures that each fold's aligned labels are comparable to the model that will
+    # actually be deployed. The first fold (smallest IS window) is the least stable
+    # parameter estimate and should not anchor alignment for the entire CV sequence.
+    # Fallback: if the full IS fit fails, the first successful fold becomes the reference.
+    _df_full_is = features_df[features_df.index <= train_end_date]
+    ref_means: np.ndarray | None = None
+    try:
+        _ref_detector, _ = fit_best_of_n_seeds(
+            _df_full_is,
+            n_regimes=n_regimes,
+            n_init=n_init,
+            train_end_date=train_end_date,
+            covariance_type=covariance_type,
+            p_stay=p_stay,
+            min_regime_share=min_regime_share,
+            feature_names=feature_names,
+        )
+        ref_means = _ref_detector.model.means_  # (K, d)
+        logger.debug(
+            "expanding_window_cv: reference model fitted on full IS window (%d obs, IS-end=%s).",
+            len(_df_full_is),
+            train_end_date.date(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "expanding_window_cv: full IS reference model fit failed (%s) — "
+            "falling back to first successful fold as reference.",
+            exc,
+        )
 
     for fold_end in fold_ends:
         oos_end = fold_end + pd.DateOffset(months=oos_window_months)
@@ -695,24 +726,24 @@ def expanding_window_cv(
 
         X_oos = scaler.transform(df_oos.values)
 
-        # Align states to reference fold using Euclidean distance on means
+        # Align states to reference using Euclidean distance on means.
+        # Reference is the full IS model fitted above; falls back to the first
+        # successful fold if that fit failed.
         means_cand = detector.model.means_  # (K, d)
-        if ref_detector is None:
-            ref_detector = detector
-            perm = np.arange(n_regimes)
-            # First fold is always identity — no comparison available yet
-        else:
-            means_ref = ref_detector.model.means_
-            cost = np.array(
-                [[np.linalg.norm(means_cand[i] - means_ref[j]) for j in range(n_regimes)] for i in range(n_regimes)]
-            )
-            _, col_ind = linear_sum_assignment(cost)
-            perm = col_ind
-            # Count folds where state ordering genuinely differs from the reference.
-            # Frequent reorderings indicate the HMM is finding different local minima
-            # as the IS window grows — a sign of label instability beyond churn.
-            if not np.array_equal(perm, np.arange(n_regimes)):
-                nontrivial_perm_count += 1
+        if ref_means is None:
+            # Fallback: first successful fold becomes the reference.
+            ref_means = means_cand
+            logger.debug("expanding_window_cv: using first fold as alignment reference (full IS fit failed).")
+        cost = np.array(
+            [[np.linalg.norm(means_cand[i] - ref_means[j]) for j in range(n_regimes)] for i in range(n_regimes)]
+        )
+        _, col_ind = linear_sum_assignment(cost)
+        perm = col_ind
+        # Count folds where state ordering genuinely differs from the reference.
+        # Frequent reorderings indicate the HMM is finding different local minima
+        # as the IS window grows — a sign of label instability beyond churn.
+        if not np.array_equal(perm, np.arange(n_regimes)):
+            nontrivial_perm_count += 1
 
         raw_labels = detector.predict(X_oos)
         aligned_labels = perm[raw_labels]  # remap to reference ordering

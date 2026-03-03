@@ -56,7 +56,7 @@ def select_best_hmm_model(
     max_share: float = 0.80,
     oos_min_share: float = 0.02,
     oos_max_share: float = 0.85,
-    max_implied_duration: float = 400.0,
+    max_implied_duration: float = 1000.0,
     min_exit_paths_required: int = 2,
     maha_min_quantile: float = 0.10,
     top_n: int = 10,

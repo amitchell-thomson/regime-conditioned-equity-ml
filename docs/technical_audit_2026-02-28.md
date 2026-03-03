@@ -453,20 +453,20 @@ To be explicit about what should not change:
 
 ## Summary Table
 
-| Area | Status | Key Issue | Priority |
-|------|--------|-----------|----------|
-| Feature transforms | ✅ Correct | Window unit ambiguity in YAML | Low |
-| Staleness handling | ✅ Correct | None | — |
-| CFNAI look-ahead | ⚠️ Risk | use_alfred: false despite heavy revisions | Medium |
-| Group PCA | ✅ Correct | Duplicate check; _GROUPS hardcoded | Low |
-| HMM fitting | ✅ Correct | filter_proba Python loop (perf) | Low |
-| CV selection gap | 🔴 Gap | Winner has null CV diagnostics | **High** |
-| BIC scoring | ✅ Correct | Normalised within survivors (intended) | — |
-| tv_score thresholds | 🔴 Wrong | Zero score for all models | **High** |
-| model_id naming | ⚠️ Opaque | Positional, not descriptive | Medium |
-| Archetype labeling | ⚠️ Thin margins | Policy vs Stagflation margin 0.022 | Medium |
-| Episode validation | ⚠️ Misleading | Recession episodes always fail | Medium |
-| Hardcoded path | 🔴 Bug | feature_metadata.yaml path | Medium |
-| Duplicate check | ⚠️ Dead code | group_pca.py transform() | Low |
-| YAML quality | ✅ High | Outdated 4-state comment | Low |
-| Test coverage | ✅ High | CV selection gap not tested | Medium |
+| Area | Key Issue | Priority | Resolution |
+|------|-----------|----------|------------|
+| Feature transforms | Window unit ambiguity in YAML | Low | ✅ Done — frequency semantics comment added to regime_universe.yaml |
+| Staleness handling | None | — | ✅ Correct — no action needed |
+| CFNAI look-ahead | use_alfred: false despite heavy revisions | Medium | ⚠️ Acknowledged — documented as voluntary concession in YAML comment |
+| Group PCA | Duplicate check; _GROUPS hardcoded | Low | ✅ Done — duplicate check removed; runtime validation added |
+| HMM fitting | filter_proba Python loop (perf) | Low | Open — acceptable at current scale |
+| CV selection gap | Winner has null CV diagnostics | **High** | ✅ Done — CV now runs for all hard-filter survivors |
+| BIC scoring | Normalised within survivors (intended) | — | ✅ Correct — no action needed |
+| tv_score thresholds | Zero score for all models | **High** | ✅ Done — tv_score removed; weight redistributed to dur_score/off_pen |
+| model_id naming | Positional, not descriptive | Medium | Open |
+| Archetype labeling | Policy vs Stagflation margin 0.022 | Medium | ✅ Done — n4 inflation_policy signature strengthened (inflation 1.2→1.5, rates -1.0→-1.3) |
+| Episode validation | Recession episodes always fail | Medium | ✅ Done — pool-routing comment clarified in economic_episodes.yaml; n4 contraction rates fixed |
+| Hardcoded path | feature_metadata.yaml path | Medium | ✅ Done — feature_metadata_path added to regime_universe.yaml |
+| Duplicate check | group_pca.py transform() | Low | ✅ Done — removed |
+| YAML quality | Outdated 4-state comment | Low | ✅ Done — economic_episodes.yaml updated with pool-routing comment |
+| Test coverage | CV selection gap not tested | Medium | ✅ Done — 34 new CV tests added |
