@@ -3,6 +3,7 @@
 
 # .env files
 .env
+.envrc
 
 # Virtual environments
 .venv/

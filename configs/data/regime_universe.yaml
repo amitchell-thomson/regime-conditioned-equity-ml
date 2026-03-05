@@ -2,7 +2,7 @@ regime_universe:
   calendar: business
 
   # Override with MACRO_DATA_PATH environment variable (set in .env — see .env.example).
-  data_path: "/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro"
+  data_path: "/Users/alecmitchell-thomson/projects/quant-data/macro"
   raw_path: "data/raw/macro_raw.parquet"
   processed_path: "data/processed/macro_processed.parquet"
   raw_features_path: "data/features/macro_features_raw.parquet"
@@ -45,13 +45,13 @@ regime_universe:
   # All window and periods values in transform chains below are expressed in units
   # of the series' NATIVE frequency — not calendar days or forward-filled daily rows.
   #
-  #   daily series  (FEDFUNDS, DGS10, T10Y2Y, T10Y3M, BAA10Y, VIXCLS):
+  #   daily series  (DGS10, T10Y2Y, T10Y3M, BAA10Y, VIXCLS):
   #       window/periods = trading days  (252 ≈ 1 year, 126 ≈ 6 months, 63 ≈ 1 quarter)
   #
   #   weekly series (ICSA, NFCI):
   #       window/periods = calendar weeks  (52 ≈ 1 year, 13 ≈ 1 quarter, 4 ≈ 1 month)
   #
-  #   monthly series (CPIAUCSL, CFNAI, INDPRO, UNRATE, PAYEMS):
+  #   monthly series (FEDFUNDS, CPIAUCSL, CFNAI, INDPRO, UNRATE, PAYEMS):
   #       window/periods = calendar months  (36 ≈ 3 years, 12 = 1 year, 3 = 1 quarter)
   #
   # Staleness-aware transforms (staleness_mode='strict', the default) count only real
@@ -74,12 +74,12 @@ regime_universe:
       id: FEDFUNDS
       use_alfred: false # Effective rate published next business day; minimal revision
       category: rates
-      frequency: daily
+      frequency: monthly
       name: "Federal Funds Rate"
       description: "Primary US monetary policy rate; anchors the short end of the yield curve."
       transforms:
-        - [level, { z_score: { window: 252 } }] # Policy stance level
-        - [{ diff: { periods: 63 } }, { z_score: { window: 36 } }] # Hiking/cutting cycle magnitude
+        - [level, { z_score: { window: 12 } }] # Policy stance level (12 months ≈ 1 year)
+        - [{ diff: { periods: 3 } }, { z_score: { window: 36 } }] # Hiking/cutting cycle magnitude (3-month change, 3yr window)
 
     ust10y:
       id: DGS10

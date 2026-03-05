@@ -2,7 +2,8 @@
 
 import logging
 from pathlib import Path
-from typing import Union, List
+from typing import List, Union
+
 import pandas as pd
 
 from regime_ml.data.common import get_project_root
@@ -45,7 +46,7 @@ def load_raw_data(
     Examples:
         >>> # Use defaults (load from quant-data, save to data/raw)
         >>> df = load_raw_data(
-        ...     source_dir="/Users/alecmitchell-thomson/Desktop/Coding/quant-data/macro",
+        ...     source_dir="/Users/alecmitchell-thomson/projects/quant-data/macro",
         ...     output_path="data/raw/macro_raw.parquet"
         ... )
 
@@ -167,7 +168,7 @@ def load_alfred_data(
 
     if not alfred_files:
         raise ValueError(
-            "No ALFRED parquet files found in %s. " "Expected files matching '*_alfred.parquet'." % source_dir
+            "No ALFRED parquet files found in %s. Expected files matching '*_alfred.parquet'." % source_dir
         )
 
     logger.info("Found %d ALFRED parquet files in %s", len(alfred_files), source_dir)

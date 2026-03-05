@@ -10,14 +10,14 @@
 # Pool routing: the active archetype pool depends on the winning model's n_regimes.
 #   K <= 3  → n3 pool (risk_on / contraction / crisis)
 #   K == 4  → n4 pool (risk_on / contraction / inflation_policy / crisis)
-#   K >= 5  → canonical pool (all 7 archetypes)
+#   K >= 5  → canonical pool (5 archetypes: expansion, recovery, slowdown, policy_constrained, liquidity_crisis)
 #
 # Episodes are written in canonical archetype space. validate_against_episodes() translates
 # to the winning model's pool via taxonomy.canonical_to_coarse in regime_archetypes.yaml:
-#   expansion / recovery           → risk_on          (n3, n4)
-#   slowdown / recession           → contraction      (n3, n4)
-#   stagflation / policy_constrained → inflation_policy (n4 only; → contraction in n3)
-#   liquidity_crisis               → crisis           (n3, n4)
+#   expansion / recovery     → risk_on          (n3, n4)
+#   slowdown                 → contraction      (n3); contraction      (n4)
+#   policy_constrained       → contraction      (n3); inflation_policy (n4)
+#   liquidity_crisis         → crisis           (n3, n4)
 #
 # If a translated key is not assigned to any HMM state (e.g. a state is unclassified),
 # that episode reports match_status="not_in_model" and is excluded from the applicable count.
@@ -26,7 +26,7 @@ episodes:
   - name: "Dot-com Bust"
     start: "2000-03-01"
     end: "2002-10-31"
-    expected_archetype: "recession"         # tech crash + mild recession
+    expected_archetype: "slowdown"          # tech-driven disinflation + growth slowdown; mild contraction, not systemic
 
   - name: "Post Dot-com Recovery"
     start: "2003-07-01"
