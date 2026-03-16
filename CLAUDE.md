@@ -19,6 +19,43 @@ All changes should maintain production-level clarity, modularity, and statistica
 
 ---
 
+## Vault-First Context Protocol
+
+The project has an Obsidian vault at `obsidian/` (MCP server: `mcp__obsidian-vault__*`).
+
+**At the start of every new session, before answering any question or reading source code:**
+
+1. Read `obsidian/context/now.md` — current phase status, open blockers, readiness targets, settled decisions, pending proposals.
+2. If the question touches a specific area, also read the relevant vault note:
+   - Regime detection / HMM → `obsidian/regimes/README.md` + relevant sub-notes
+   - Features / transforms → `obsidian/features/README.md`
+   - A specific decision → `obsidian/decisions/<slug>.md`
+   - A design proposal → `obsidian/designs/<slug>.md`
+   - Phase scope → `obsidian/phases/phase-N-*.md`
+
+**Source code** (`src/`) should be read only when the vault context is insufficient — e.g. to verify an implementation detail, debug a specific function, or write/review code. Do not read source files speculatively for orientation; the vault covers that.
+
+**Why:** The vault is the authoritative narrative layer. Reading it first reduces token usage, avoids re-deriving settled decisions, and provides the "why" behind the code.
+
+---
+
+## Vault Update Protocol
+
+The vault must be kept current. After any meaningful work, write back to it.
+
+| Event | Action |
+|---|---|
+| Design question touching regime inference or evaluation | Use `vault-proposal` skill → writes to `obsidian/designs/` |
+| Architectural/config decision confirmed | Use `vault-decision` skill → writes to `obsidian/decisions/`, updates `context/now.md` |
+| Blocker resolved or unblocked | Edit `obsidian/context/now.md`: move blocker to resolved, update phase status |
+| Phase readiness metrics change | Update the targets table in `obsidian/context/now.md` |
+| Settled decision (do not re-litigate) | Add to the "Do not re-litigate" section in `obsidian/context/now.md` |
+| Phase milestone completed | Update phase status in `obsidian/context/now.md` and the relevant `obsidian/phases/` note |
+
+**Rule:** If a decision or resolution is reached in conversation but the vault is not updated, future sessions will re-derive it. Always close the loop.
+
+---
+
 ## Design Philosophy
 
 These are the judgment calls that matter on this project. When in doubt, resolve ambiguity using these principles.

@@ -22,6 +22,9 @@ Thumbs.db
 # Editor
 .vscode/
 
+# Obsidian vault
+obsidian/.obsidian
+
 # Python packaging
 *.egg-info/
 dist/
